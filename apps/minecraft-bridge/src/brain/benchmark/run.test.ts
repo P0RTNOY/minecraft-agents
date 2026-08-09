@@ -28,7 +28,8 @@ const baseInput: BrainInput = {
     actionSource: null,
     busy: false
   },
-  previousActionResult: null
+  previousActionResult: null,
+  recentDecisions: []
 }
 
 describe('runBrainBenchmark', () => {
@@ -39,10 +40,11 @@ describe('runBrainBenchmark', () => {
       input: baseInput,
       samples: 2
     }
+    const observedInputs: BrainInput[] = []
     const provider = scriptedProvider([
       { action: 'say', message: 'Hello!', reason: 'Greet nearby players.' },
       { action: 'say', message: 'Hello!', reason: 'Greet nearby players.' }
-    ])
+    ], observedInputs)
     let time = 0
 
     const results = await runBrainBenchmark({
@@ -90,6 +92,9 @@ describe('runBrainBenchmark', () => {
     ])
     assert.equal(results[0]?.provider, 'scripted')
     assert.equal(results[0]?.model, 'test-model')
+    assert.equal(observedInputs[0]?.recentDecisions.length, 0)
+    assert.equal(observedInputs[1]?.recentDecisions.length, 1)
+    assert.equal(observedInputs[1]?.recentDecisions[0]?.decision.action, 'say')
   })
 
   it('distinguishes schema failures and unsafe player targets', async () => {
@@ -213,10 +218,14 @@ function scenario(id: string, input: BrainInput): BrainBenchmarkScenario {
   return { id, description: id, input }
 }
 
-function scriptedProvider(outputs: unknown[]): LLMProvider {
+function scriptedProvider(
+  outputs: unknown[],
+  observedInputs: BrainInput[] = []
+): LLMProvider {
   let index = 0
   return {
-    async decide() {
+    async decide(input) {
+      observedInputs.push(input)
       const output = outputs[index]
       index += 1
       return output

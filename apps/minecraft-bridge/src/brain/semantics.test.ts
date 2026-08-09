@@ -49,7 +49,8 @@ const input: BrainInput = {
     actionSource: null,
     busy: false
   },
-  previousActionResult: null
+  previousActionResult: null,
+  recentDecisions: []
 }
 
 describe('buildBrainSemantics', () => {

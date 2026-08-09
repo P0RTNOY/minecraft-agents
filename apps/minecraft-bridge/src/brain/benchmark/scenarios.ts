@@ -78,7 +78,8 @@ function scenario(
         actionSource: null,
         busy: false
       },
-      previousActionResult: overrides.previousActionResult ?? null
+      previousActionResult: overrides.previousActionResult ?? null,
+      recentDecisions: []
     } satisfies BrainInput
   }
 }

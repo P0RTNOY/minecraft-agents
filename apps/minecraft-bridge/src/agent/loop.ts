@@ -2,11 +2,17 @@ import type { Bot } from 'mineflayer'
 
 import type { AgentState } from './state.js'
 import type { LLMProvider } from '../brain/provider.js'
+import {
+  appendRecentDecision,
+  assessRepetition,
+  createRecentDecision
+} from '../brain/repetition.js'
 import { buildDecisionContext } from '../brain/semantics.js'
 import type {
   AgentDecision,
   BrainInput,
-  DecisionExecutionResult
+  DecisionExecutionResult,
+  RecentDecision
 } from '../brain/types.js'
 import {
   validateDecision,
@@ -50,6 +56,11 @@ export type BrainCycleResult =
       reason: 'cycle_in_progress' | 'manual_override' | 'manual_action_active'
     }
   | { status: 'validation_failed'; issues: string[] }
+  | {
+      status: 'policy_rejected'
+      reason: 'duplicate_say' | 'stagnant_idle'
+      decision: AgentDecision
+    }
   | { status: 'provider_failed'; error: string }
   | { status: 'observation_failed'; error: string }
   | { status: 'execution_failed'; result: DecisionExecutionResult }
@@ -71,6 +82,7 @@ export class AutonomousAgentLoop {
   private cycleInProgress = false
   private timer: NodeJS.Timeout | null = null
   private previousActionResult: DecisionExecutionResult | null = null
+  private recentDecisions: readonly RecentDecision[] = []
 
   constructor(options: AgentLoopOptions) {
     if (!Number.isInteger(options.intervalMs) || options.intervalMs < 1000) {
@@ -136,7 +148,8 @@ export class AutonomousAgentLoop {
           actionSource: this.state.actionSource,
           busy: this.state.busy
         },
-        previousActionResult: this.previousActionResult
+        previousActionResult: this.previousActionResult,
+        recentDecisions: this.recentDecisions
       }
 
       let providerOutput: unknown
@@ -166,6 +179,16 @@ export class AutonomousAgentLoop {
       }
 
       const decision = validation.decision
+      const repetition = assessRepetition(decision, input)
+      if (!repetition.allowed) {
+        this.logger.log(`ℹ️ Decision rejected by repetition policy: ${repetition.reason}`)
+        return {
+          status: 'policy_rejected',
+          reason: repetition.reason,
+          decision
+        }
+      }
+
       this.logger.log(`Goal/Reason: ${decision.reason}`)
       this.logger.log(`Decision: ${formatDecision(decision)}`)
       this.logger.log(`⚙️ Executing: ${decision.action}`)
@@ -186,6 +209,10 @@ export class AutonomousAgentLoop {
       }
 
       this.previousActionResult = result
+      this.recentDecisions = appendRecentDecision(
+        this.recentDecisions,
+        createRecentDecision(input, decision, result)
+      )
       this.logger[result.success ? 'log' : 'error'](
         `${result.success ? '✅' : '❌'} Result: ${result.summary}`
       )

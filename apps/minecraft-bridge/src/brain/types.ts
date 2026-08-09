@@ -37,8 +37,15 @@ export interface DecisionExecutionResult {
   details?: Record<string, string | number | boolean>
 }
 
+export interface RecentDecision {
+  decision: AgentDecision
+  result: DecisionExecutionResult
+  worldStateFingerprint: string
+}
+
 export interface BrainInput {
   perception: PerceptionSnapshot
   state: BrainStateSnapshot
   previousActionResult: DecisionExecutionResult | null
+  recentDecisions: readonly RecentDecision[]
 }

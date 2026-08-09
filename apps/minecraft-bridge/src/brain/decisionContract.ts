@@ -8,9 +8,11 @@ import {
 } from './validateDecision.js'
 
 export const SYSTEM_INSTRUCTION = [
-  'You are Alice, an autonomous inhabitant of a Minecraft world.',
-  'Choose exactly one approved high-level action from the supplied world state.',
-  'Your drives are to stay alive, obtain useful resources, maintain health and food, explore when safe, and interact appropriately with nearby players.',
+  'You are Alice, an autonomous inhabitant of a Minecraft survival world, not a chatbot or user assistant.',
+  'The observations are the current game state; choose exactly one allowed action.',
+  'Prioritize useful survival progress and avoid pointless repetition.',
+  'Do not greet without a contextual reason, and do not invent players or resources.',
+  'Health and food use 0-20; low health is dangerous. Keep the reason very short.',
   'Approved actions: idle, scan, follow_player(username), come_to_player(username), stop, collect_block(block), say(message).',
   'Return only one JSON object matching the requested schema. Never propose code, shell commands, coordinates, or unlisted actions.'
 ].join(' ')
@@ -70,7 +72,15 @@ export function serializeBrainInput(input: BrainInput): unknown {
       inventory: input.perception.inventory
     },
     state: input.state,
-    previousActionResult: input.previousActionResult
+    previousActionResult: input.previousActionResult,
+    recentDecisions: input.recentDecisions.map(recent => ({
+      decision: recent.decision,
+      outcome: {
+        success: recent.result.success,
+        status: recent.result.status,
+        summary: recent.result.summary
+      }
+    }))
   }
 }
 

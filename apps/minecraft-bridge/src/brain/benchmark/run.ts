@@ -1,4 +1,8 @@
 import type { LLMProvider } from '../provider.js'
+import {
+  appendRecentDecision,
+  createRecentDecision
+} from '../repetition.js'
 import { buildDecisionContext } from '../semantics.js'
 import type {
   AgentDecision,
@@ -114,9 +118,14 @@ export async function runBrainBenchmark(
       })
 
       previousSignature = signature
+      const result = simulatedResult(decision)
       input = {
         ...input,
-        previousActionResult: simulatedResult(decision)
+        previousActionResult: result,
+        recentDecisions: appendRecentDecision(
+          input.recentDecisions,
+          createRecentDecision(input, decision, result)
+        )
       }
     }
   }

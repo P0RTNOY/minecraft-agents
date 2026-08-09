@@ -1,6 +1,6 @@
 import type { AgentDecision } from './types.js'
 
-export const MAX_REASON_LENGTH = 240
+export const MAX_REASON_LENGTH = 160
 export const MAX_SAY_MESSAGE_LENGTH = 256
 export const MAX_BLOCK_NAME_LENGTH = 64
 export const MAX_USERNAME_LENGTH = 16

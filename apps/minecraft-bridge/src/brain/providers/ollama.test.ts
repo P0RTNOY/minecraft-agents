@@ -26,7 +26,8 @@ const brainInput: BrainInput = {
     actionSource: null,
     busy: false
   },
-  previousActionResult: null
+  previousActionResult: null,
+  recentDecisions: []
 }
 
 describe('OllamaProvider', () => {

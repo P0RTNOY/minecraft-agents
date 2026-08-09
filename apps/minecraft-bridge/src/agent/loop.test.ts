@@ -183,6 +183,51 @@ describe('AutonomousAgentLoop', () => {
     })
     assert.equal(providerCalls, 0)
   })
+
+  it('rejects repeated chat without executing it twice', async () => {
+    let executions = 0
+    const loop = createLoop({
+      provider: {
+        decide: async () => ({
+          action: 'say',
+          message: 'Hello there!',
+          reason: 'Greet the area.'
+        })
+      },
+      execute: async (_bot, decision) => {
+        executions += 1
+        return executionFor(decision)
+      }
+    })
+
+    assert.equal((await loop.runCycle()).status, 'executed')
+    assert.deepEqual(await loop.runCycle(), {
+      status: 'policy_rejected',
+      reason: 'duplicate_say',
+      decision: {
+        action: 'say',
+        message: 'Hello there!',
+        reason: 'Greet the area.'
+      }
+    })
+    assert.equal(executions, 1)
+  })
+
+  it('rejects a third idle in unchanged observations', async () => {
+    let executions = 0
+    const loop = createLoop({
+      provider: { decide: async () => ({ action: 'idle', reason: 'Wait.' }) },
+      execute: async (_bot, decision) => {
+        executions += 1
+        return executionFor(decision)
+      }
+    })
+
+    assert.equal((await loop.runCycle()).status, 'executed')
+    assert.equal((await loop.runCycle()).status, 'executed')
+    assert.equal((await loop.runCycle()).status, 'policy_rejected')
+    assert.equal(executions, 2)
+  })
 })
 
 function createLoop(
