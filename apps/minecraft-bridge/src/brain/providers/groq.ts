@@ -110,8 +110,8 @@ function createEndpoint(baseUrl: string): string {
   const normalized = requireNonEmpty(baseUrl, 'Groq base URL')
   const parsed = new URL(normalized)
 
-  if (!['http:', 'https:'].includes(parsed.protocol)) {
-    throw new Error('Groq base URL must use HTTP or HTTPS.')
+  if (parsed.protocol !== 'https:') {
+    throw new Error('Groq base URL must use HTTPS.')
   }
 
   if (parsed.username || parsed.password) {

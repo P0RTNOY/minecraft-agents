@@ -112,7 +112,15 @@ describe('GroqProvider', () => {
         apiKey: 'test-api-key',
         model: 'openai/gpt-oss-20b'
       }),
-      /HTTP or HTTPS/
+      /HTTPS/
+    )
+    assert.throws(
+      () => new GroqProvider({
+        baseUrl: 'http://api.groq.test/openai/v1',
+        apiKey: 'test-api-key',
+        model: 'openai/gpt-oss-20b'
+      }),
+      /HTTPS/
     )
   })
 
