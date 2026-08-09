@@ -20,3 +20,11 @@ minecraft/server/world_the_end/
 minecraft/server/usercache.json
 minecraft/server/eula.txt
 minecraft/server/.console_history
+
+# Paper runtime / plugins
+minecraft/server/plugins/
+minecraft/server/crash-reports/
+minecraft/server/banned-ips.json
+minecraft/server/banned-players.json
+minecraft/server/ops.json
+minecraft/server/whitelist.json
