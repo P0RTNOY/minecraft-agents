@@ -13,6 +13,7 @@ export interface DecisionValidationIssue {
 export interface DecisionValidationContext {
   selfUsername: string
   visibleExternalPlayers: readonly string[]
+  visibleNearbyBlocks: readonly string[]
 }
 
 export type DecisionValidationResult =
@@ -114,6 +115,18 @@ export function validateDecision(
         issues.push({
           path: 'block',
           message: 'Block must be a lowercase Minecraft registry name.'
+        })
+      }
+
+      if (
+        block &&
+        context &&
+        BLOCK_NAME.test(block) &&
+        !context.visibleNearbyBlocks.includes(block)
+      ) {
+        issues.push({
+          path: 'block',
+          message: 'Block target must be an observed nearby block.'
         })
       }
 

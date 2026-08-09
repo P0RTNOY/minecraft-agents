@@ -15,7 +15,28 @@ const input: BrainInput = {
     position: { x: 1, y: 64, z: 2 },
     health: 7.95,
     food: 15,
-    nearbyBlocks: [],
+    nearbyBlocks: [
+      {
+        name: 'grass_block',
+        distance: 1,
+        position: { x: 1, y: 63, z: 2 }
+      },
+      {
+        name: 'dirt',
+        distance: 2,
+        position: { x: 2, y: 63, z: 2 }
+      },
+      {
+        name: 'bamboo',
+        distance: 3,
+        position: { x: 3, y: 64, z: 2 }
+      },
+      {
+        name: 'bamboo',
+        distance: 4,
+        position: { x: 4, y: 64, z: 2 }
+      }
+    ],
     nearbyEntities: [
       {
         id: 1,
@@ -101,10 +122,11 @@ describe('buildBrainSemantics', () => {
 })
 
 describe('buildDecisionContext', () => {
-  it('contains only canonical visible external player names', () => {
+  it('contains canonical visible players and deduplicated nearby blocks', () => {
     assert.deepEqual(buildDecisionContext(input), {
       selfUsername: 'Alice',
-      visibleExternalPlayers: ['Steve']
+      visibleExternalPlayers: ['Steve'],
+      visibleNearbyBlocks: ['grass_block', 'dirt', 'bamboo']
     })
   })
 })

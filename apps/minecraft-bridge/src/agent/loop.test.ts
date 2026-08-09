@@ -81,6 +81,42 @@ describe('AutonomousAgentLoop', () => {
     assert.equal(executions, 1)
   })
 
+  it('does not execute an unobserved collection target', async () => {
+    let executions = 0
+    const loop = createLoop({
+      provider: {
+        decide: async () => ({
+          action: 'collect_block',
+          block: 'oak_log',
+          reason: 'Gather wood.'
+        })
+      },
+      observe: () => ({
+        agent: 'Alice',
+        timestamp: 1,
+        position: { x: 0, y: 64, z: 0 },
+        health: 20,
+        food: 20,
+        nearbyBlocks: [{
+          name: 'bamboo',
+          distance: 3,
+          position: { x: 3, y: 64, z: 0 }
+        }],
+        nearbyEntities: [],
+        inventory: []
+      }),
+      execute: async (_bot, decision) => {
+        executions += 1
+        return executionFor(decision)
+      }
+    })
+
+    const result = await loop.runCycle()
+
+    assert.equal(result.status, 'validation_failed')
+    assert.equal(executions, 0)
+  })
+
   it('does not overlap provider calls or skill execution', async () => {
     const decision = deferred<unknown>()
     let providerCalls = 0

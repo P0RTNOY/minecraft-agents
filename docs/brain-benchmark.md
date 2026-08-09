@@ -48,7 +48,7 @@ All 33 final responses were valid structured JSON. The two llama3.2 failures wer
 ### Decision quality observations
 
 - `qwen3:1.7b` was the fastest and produced no unsafe target. It remained conservative and scan-heavy, then emitted `idle` for all three unchanged repeated-idle samples.
-- `qwen3:4b` selected `collect_block` when useful blocks were present and showed more task variety. It was roughly 3.4 times slower than qwen3:1.7b by median latency. It also chose `collect_block` in the cow-only/no-block scenario, indicating weaker observation grounding in that sample.
+- `qwen3:4b` selected `collect_block` when useful blocks were present and showed more task variety. It was roughly 3.4 times slower than qwen3:1.7b by median latency. It also chose `collect_block` in the cow-only/no-block scenario, indicating weaker observation grounding in that sample. The subsequent M1.1 grounding hardening rejects that decision before execution because the requested block is absent from current perception.
 - `llama3.2:latest` was scan-heavy. On repeated samples it twice invented a player target despite the prompt instruction. The new contextual validator converted those outputs into safe failures.
 - Both Qwen models repeated the same idle decision twice after their first idle. In the live loop, the first two idles can execute but the third unchanged-world idle is rejected by the deterministic repetition policy. The benchmark intentionally reports provider output repetition rather than simulating skill execution policy.
 - None of the final `previous_say` decisions produced the earlier customer-support-style greeting. One small nondeterministic sample is not enough to claim that behavior is eliminated.
@@ -62,6 +62,7 @@ The meaningful improvements are therefore structural rather than a claim of mode
 - health and food have explicit 0–20 semantics and status labels;
 - self is separated from visible external players;
 - fabricated/self player targets cannot reach execution;
+- collection targets must exactly match a currently observed nearby block, with runtime revalidation if the world changes;
 - recent decisions and outcomes are bounded to four entries;
 - duplicate chat and a third unchanged-world idle are rejected deterministically;
 - reasons are capped at 160 characters and the prompt explicitly frames Alice as a Minecraft inhabitant rather than a chatbot.

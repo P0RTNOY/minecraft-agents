@@ -52,7 +52,10 @@ export function buildDecisionContext(
     selfUsername: semantics.self.username,
     visibleExternalPlayers: semantics.externalVisiblePlayers.map(
       player => player.username
-    )
+    ),
+    visibleNearbyBlocks: [...new Set(
+      input.perception.nearbyBlocks.map(block => block.name)
+    )]
   }
 }
 

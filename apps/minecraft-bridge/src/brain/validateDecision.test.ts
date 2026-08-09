@@ -122,7 +122,8 @@ describe('validateDecision', () => {
   it('accepts only visible external players when context is provided', () => {
     const context = {
       selfUsername: 'Alice',
-      visibleExternalPlayers: ['Steve']
+      visibleExternalPlayers: ['Steve'],
+      visibleNearbyBlocks: []
     }
     const selfTarget = validateDecision({
       action: 'come_to_player',
@@ -150,5 +151,76 @@ describe('validateDecision', () => {
         reason: 'Follow the visible player.'
       }
     })
+  })
+
+  it('accepts an exact observed block name when context is provided', () => {
+    const observed = validateDecision({
+      action: 'collect_block',
+      block: ' bamboo ',
+      reason: 'Gather bamboo.'
+    }, {
+      selfUsername: 'Alice',
+      visibleExternalPlayers: ['Steve'],
+      visibleNearbyBlocks: ['grass_block', 'dirt', 'bamboo']
+    })
+
+    assert.deepEqual(observed, {
+      success: true,
+      decision: {
+        action: 'collect_block',
+        block: 'bamboo',
+        reason: 'Gather bamboo.'
+      }
+    })
+  })
+
+  it('rejects an unobserved block name', () => {
+    const unobserved = validateDecision({
+      action: 'collect_block',
+      block: 'oak_log',
+      reason: 'Gather wood.'
+    }, {
+      selfUsername: 'Alice',
+      visibleExternalPlayers: [],
+      visibleNearbyBlocks: ['grass_block', 'dirt', 'bamboo']
+    })
+
+    assert.equal(unobserved.success, false)
+    if (!unobserved.success) {
+      assert.equal(
+        unobserved.issues.some(issue => (
+          issue.path === 'block' && /observed nearby block/.test(issue.message)
+        )),
+        true
+      )
+    }
+  })
+
+  it('rejects collection when no nearby blocks were observed', () => {
+    const emptyPerception = validateDecision({
+      action: 'collect_block',
+      block: 'bamboo',
+      reason: 'Gather bamboo.'
+    }, {
+      selfUsername: 'Alice',
+      visibleExternalPlayers: [],
+      visibleNearbyBlocks: []
+    })
+
+    assert.equal(emptyPerception.success, false)
+  })
+
+  it('rejects malformed block names without fuzzy normalization', () => {
+    const malformed = validateDecision({
+      action: 'collect_block',
+      block: 'Bamboo',
+      reason: 'Gather bamboo.'
+    }, {
+      selfUsername: 'Alice',
+      visibleExternalPlayers: [],
+      visibleNearbyBlocks: ['bamboo']
+    })
+
+    assert.equal(malformed.success, false)
   })
 })
