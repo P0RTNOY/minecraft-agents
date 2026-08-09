@@ -6,6 +6,7 @@ import type { Vec3 } from 'vec3'
 import {
   beginAgentAction,
   finishAgentAction,
+  type AgentActionSource,
   type AgentState
 } from '../agent/state.js'
 import { inspectInventory } from './inventory.js'
@@ -36,7 +37,8 @@ export interface CollectionResult {
 export async function collectBlock(
   bot: Bot,
   state: AgentState,
-  blockName: string
+  blockName: string,
+  source: AgentActionSource = 'manual'
 ): Promise<CollectionResult> {
   const target = bot.findBlock({
     matching: block => block.name === blockName,
@@ -57,7 +59,8 @@ export async function collectBlock(
     state,
     'collecting',
     'collect_block',
-    `Collect ${blockName}`
+    `Collect ${blockName}`,
+    source
   )
 
   try {

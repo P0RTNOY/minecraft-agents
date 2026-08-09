@@ -1,6 +1,9 @@
 import type { Bot } from 'mineflayer'
 
-import type { AgentState } from '../agent/state.js'
+import {
+  markManualOverride,
+  type AgentState
+} from '../agent/state.js'
 import { formatPerception } from '../perception/format.js'
 import { perceive } from '../perception/perceive.js'
 import {
@@ -71,6 +74,8 @@ export function registerChatCommands(
     if (!command) {
       return
     }
+
+    markManualOverride(state)
 
     void executeChatCommand(bot, state, username, command).catch(error => {
       console.error('❌ Unhandled chat command error:', error)

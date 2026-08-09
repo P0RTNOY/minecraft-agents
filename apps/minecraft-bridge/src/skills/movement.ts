@@ -5,6 +5,7 @@ import {
   beginAgentAction,
   finishAgentAction,
   stopAgentAction,
+  type AgentActionSource,
   type AgentState
 } from '../agent/state.js'
 
@@ -42,7 +43,8 @@ export function isExpectedNavigationCancellation(error: unknown): boolean {
 export async function comeToPlayer(
   bot: Bot,
   state: AgentState,
-  username: string
+  username: string,
+  source: AgentActionSource = 'manual'
 ): Promise<MovementResult> {
   const player = bot.players[username]?.entity
 
@@ -61,7 +63,8 @@ export async function comeToPlayer(
     state,
     'moving',
     'come_to_player',
-    `Reach ${username}`
+    `Reach ${username}`,
+    source
   )
 
   try {
@@ -111,7 +114,8 @@ export async function comeToPlayer(
 export function followPlayer(
   bot: Bot,
   state: AgentState,
-  username: string
+  username: string,
+  source: AgentActionSource = 'manual'
 ): MovementResult {
   const player = bot.players[username]?.entity
 
@@ -130,7 +134,8 @@ export function followPlayer(
     state,
     'following',
     'follow_player',
-    `Follow ${username}`
+    `Follow ${username}`,
+    source
   )
 
   bot.pathfinder.setGoal(
@@ -148,7 +153,8 @@ export function followPlayer(
 
 export function followNearestPlayer(
   bot: Bot,
-  state: AgentState
+  state: AgentState,
+  source: AgentActionSource = 'manual'
 ): MovementResult {
   const player = bot.nearestEntity(entity =>
     entity.type === 'player' &&
@@ -169,7 +175,8 @@ export function followNearestPlayer(
     state,
     'following',
     'follow_nearest_player',
-    `Follow ${player.username}`
+    `Follow ${player.username}`,
+    source
   )
 
   bot.pathfinder.setGoal(

@@ -1,0 +1,201 @@
+import type { Bot } from 'mineflayer'
+
+import type { AgentState } from '../agent/state.js'
+import type {
+  AgentDecision,
+  DecisionExecutionResult
+} from '../brain/types.js'
+import { perceive } from '../perception/perceive.js'
+import { collectBlock } from './collection.js'
+import { comeToPlayer, followPlayer, stopMovement } from './movement.js'
+import { say } from './social.js'
+
+export interface DecisionSkillBindings {
+  perceive: typeof perceive
+  collectBlock: typeof collectBlock
+  comeToPlayer: typeof comeToPlayer
+  followPlayer: typeof followPlayer
+  stopMovement: typeof stopMovement
+  say: typeof say
+}
+
+export type DecisionExecutor = (
+  bot: Bot,
+  decision: AgentDecision,
+  state: AgentState
+) => Promise<DecisionExecutionResult>
+
+const defaultSkills: DecisionSkillBindings = {
+  perceive,
+  collectBlock,
+  comeToPlayer,
+  followPlayer,
+  stopMovement,
+  say
+}
+
+const defaultExecutor = createDecisionExecutor(defaultSkills)
+
+export function executeDecision(
+  bot: Bot,
+  decision: AgentDecision,
+  state: AgentState
+): Promise<DecisionExecutionResult> {
+  return defaultExecutor(bot, decision, state)
+}
+
+export function createDecisionExecutor(
+  skills: DecisionSkillBindings
+): DecisionExecutor {
+  return async (bot, decision, state) => {
+    try {
+      switch (decision.action) {
+        case 'idle':
+          return {
+            success: true,
+            action: 'idle',
+            status: 'completed',
+            summary: 'Alice remained idle.'
+          }
+
+        case 'scan': {
+          const snapshot = skills.perceive(bot)
+          return {
+            success: true,
+            action: 'scan',
+            status: 'completed',
+            summary: 'Environment scan completed.',
+            details: {
+              nearbyBlocks: snapshot.nearbyBlocks.length,
+              nearbyEntities: snapshot.nearbyEntities.length,
+              inventoryStacks: snapshot.inventory.length
+            }
+          }
+        }
+
+        case 'follow_player':
+          return movementExecutionResult(
+            decision.action,
+            decision.username,
+            skills.followPlayer(
+              bot,
+              state,
+              decision.username,
+              'autonomous'
+            )
+          )
+
+        case 'come_to_player':
+          return movementExecutionResult(
+            decision.action,
+            decision.username,
+            await skills.comeToPlayer(
+              bot,
+              state,
+              decision.username,
+              'autonomous'
+            )
+          )
+
+        case 'stop': {
+          const result = skills.stopMovement(bot, state)
+          return {
+            success: result.success,
+            action: 'stop',
+            status: result.status,
+            summary: 'Movement stopped.'
+          }
+        }
+
+        case 'collect_block': {
+          const result = await skills.collectBlock(
+            bot,
+            state,
+            decision.block,
+            'autonomous'
+          )
+          return {
+            success: result.success,
+            action: 'collect_block',
+            status: result.status,
+            summary: result.success
+              ? `Collected ${result.collected} ${decision.block}.`
+              : `Could not collect ${decision.block}.`,
+            details: {
+              collected: result.collected,
+              blockBroken: result.blockBroken,
+              dropDetected: result.dropDetected,
+              ...(result.reason ? { reason: result.reason } : {})
+            }
+          }
+        }
+
+        case 'say': {
+          const result = skills.say(bot, decision.message)
+          return {
+            success: result.success,
+            action: 'say',
+            status: result.success ? 'completed' : 'failed',
+            summary: result.success
+              ? `Said: ${result.message}`
+              : 'Chat message was rejected.',
+            ...(result.reason
+              ? { details: { reason: result.reason } }
+              : {})
+          }
+        }
+
+        default:
+          return assertNever(decision)
+      }
+    } catch (error) {
+      return {
+        success: false,
+        action: decision.action,
+        status: 'failed',
+        summary: formatError(error)
+      }
+    }
+  }
+}
+
+function movementExecutionResult(
+  action: 'follow_player' | 'come_to_player',
+  username: string,
+  result: Awaited<ReturnType<typeof comeToPlayer>>
+): DecisionExecutionResult {
+  if (!result.success && result.reason === 'player_not_visible') {
+    return {
+      success: false,
+      action,
+      status: 'failed',
+      summary: `Player ${username} is not visible.`,
+      details: { reason: result.reason }
+    }
+  }
+
+  return {
+    success: result.success,
+    action,
+    status: result.status,
+    summary: result.success
+      ? `${action === 'follow_player' ? 'Following' : 'Reached'} ${username}.`
+      : `Could not ${action === 'follow_player' ? 'follow' : 'reach'} ${username}.`,
+    ...((result.reason || result.error)
+      ? {
+          details: {
+            ...(result.reason ? { reason: result.reason } : {}),
+            ...(result.error ? { error: result.error } : {})
+          }
+        }
+      : {})
+  }
+}
+
+function assertNever(value: never): never {
+  throw new Error(`Unhandled decision: ${JSON.stringify(value)}`)
+}
+
+function formatError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}

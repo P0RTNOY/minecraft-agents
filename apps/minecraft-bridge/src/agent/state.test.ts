@@ -5,6 +5,7 @@ import {
   beginAgentAction,
   createAgentState,
   finishAgentAction,
+  markManualOverride,
   stopAgentAction
 } from './state.js'
 
@@ -17,8 +18,10 @@ describe('agent state', () => {
       status: 'idle',
       currentAction: null,
       currentGoal: null,
+      actionSource: null,
       busy: false,
-      actionVersion: 0
+      actionVersion: 0,
+      manualOverrideVersion: 0
     })
   })
 
@@ -47,7 +50,25 @@ describe('agent state', () => {
     assert.equal(finishAgentAction(state, firstVersion), false)
     assert.equal(state.status, 'following')
     assert.equal(state.currentAction, 'follow_player')
+    assert.equal(state.actionSource, 'manual')
     assert.equal(state.actionVersion, secondVersion)
+  })
+
+  it('tracks autonomous ownership and manual override generations', () => {
+    const state = createAgentState('Alice')
+    beginAgentAction(
+      state,
+      'following',
+      'follow_player',
+      'Follow Steve',
+      'autonomous'
+    )
+
+    const overrideVersion = markManualOverride(state)
+
+    assert.equal(state.actionSource, 'autonomous')
+    assert.equal(state.manualOverrideVersion, overrideVersion)
+    assert.equal(overrideVersion, 1)
   })
 
   it('clears the current action when it completes or is stopped', () => {
@@ -69,6 +90,7 @@ describe('agent state', () => {
     assert.equal(state.status, 'idle')
     assert.equal(state.currentAction, null)
     assert.equal(state.currentGoal, null)
+    assert.equal(state.actionSource, null)
     assert.equal(state.busy, false)
   })
 })
