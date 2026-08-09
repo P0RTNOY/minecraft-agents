@@ -11,6 +11,8 @@ describe('loadBrainConfig', () => {
       provider: 'ollama',
       model: '',
       ollamaBaseUrl: 'http://127.0.0.1:11434',
+      groqBaseUrl: 'https://api.groq.com/openai/v1',
+      groqApiKey: '',
       debugTiming: false
     })
   })
@@ -22,6 +24,8 @@ describe('loadBrainConfig', () => {
       LLM_PROVIDER: 'ollama',
       LLM_MODEL: 'local-test-model',
       OLLAMA_BASE_URL: 'http://localhost:11434/',
+      GROQ_BASE_URL: 'https://groq.example/v1/',
+      GROQ_API_KEY: 'test-api-key',
       LLM_DEBUG_TIMING: 'true'
     }), {
       autonomous: true,
@@ -29,6 +33,8 @@ describe('loadBrainConfig', () => {
       provider: 'ollama',
       model: 'local-test-model',
       ollamaBaseUrl: 'http://localhost:11434/',
+      groqBaseUrl: 'https://groq.example/v1/',
+      groqApiKey: 'test-api-key',
       debugTiming: true
     })
   })
@@ -45,6 +51,14 @@ describe('loadBrainConfig', () => {
     assert.throws(
       () => loadBrainConfig({ LLM_DEBUG_TIMING: 'yes' }),
       /LLM_DEBUG_TIMING must be either true or false/
+    )
+    assert.throws(
+      () => loadBrainConfig({
+        AGENT_AUTONOMOUS: 'true',
+        LLM_PROVIDER: 'groq',
+        LLM_MODEL: 'openai/gpt-oss-20b'
+      }),
+      /GROQ_API_KEY is required/
     )
   })
 })

@@ -4,6 +4,8 @@ export interface BrainConfig {
   provider: string
   model: string
   ollamaBaseUrl: string
+  groqBaseUrl: string
+  groqApiKey: string
   debugTiming: boolean
 }
 
@@ -30,18 +32,27 @@ export function loadBrainConfig(
     false
   )
   const model = environment.LLM_MODEL?.trim() ?? ''
+  const provider = environment.LLM_PROVIDER?.trim().toLowerCase() || 'ollama'
+  const groqApiKey = environment.GROQ_API_KEY?.trim() ?? ''
 
   if (autonomous && model.length === 0) {
     throw new Error('LLM_MODEL is required when AGENT_AUTONOMOUS=true.')
   }
 
+  if (autonomous && provider === 'groq' && groqApiKey.length === 0) {
+    throw new Error('GROQ_API_KEY is required when Groq autonomy is enabled.')
+  }
+
   return {
     autonomous,
     tickIntervalMs,
-    provider: environment.LLM_PROVIDER?.trim().toLowerCase() || 'ollama',
+    provider,
     model,
     ollamaBaseUrl: environment.OLLAMA_BASE_URL?.trim() ||
       'http://127.0.0.1:11434',
+    groqBaseUrl: environment.GROQ_BASE_URL?.trim() ||
+      'https://api.groq.com/openai/v1',
+    groqApiKey,
     debugTiming
   }
 }

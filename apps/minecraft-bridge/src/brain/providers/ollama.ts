@@ -1,11 +1,10 @@
+import {
+  DECISION_JSON_SCHEMA,
+  serializeBrainInput,
+  SYSTEM_INSTRUCTION
+} from '../decisionContract.js'
 import type { LLMProvider } from '../provider.js'
 import type { BrainInput } from '../types.js'
-import {
-  MAX_BLOCK_NAME_LENGTH,
-  MAX_REASON_LENGTH,
-  MAX_SAY_MESSAGE_LENGTH,
-  MAX_USERNAME_LENGTH
-} from '../validateDecision.js'
 
 export interface OllamaProviderOptions {
   baseUrl: string
@@ -28,26 +27,6 @@ interface OllamaTiming {
   evalCount: number
   evalDuration: number
 }
-
-const SYSTEM_INSTRUCTION = [
-  'You are Alice, an autonomous inhabitant of a Minecraft world.',
-  'Choose exactly one approved high-level action from the supplied world state.',
-  'Your drives are to stay alive, obtain useful resources, maintain health and food, explore when safe, and interact appropriately with nearby players.',
-  'Approved actions: idle, scan, follow_player(username), come_to_player(username), stop, collect_block(block), say(message).',
-  'Return only one JSON object matching the requested schema. Never propose code, shell commands, coordinates, or unlisted actions.'
-].join(' ')
-
-const DECISION_JSON_SCHEMA = {
-  oneOf: [
-    simpleDecisionSchema('idle'),
-    simpleDecisionSchema('scan'),
-    simpleDecisionSchema('stop'),
-    targetedDecisionSchema('follow_player', 'username', MAX_USERNAME_LENGTH),
-    targetedDecisionSchema('come_to_player', 'username', MAX_USERNAME_LENGTH),
-    targetedDecisionSchema('collect_block', 'block', MAX_BLOCK_NAME_LENGTH),
-    targetedDecisionSchema('say', 'message', MAX_SAY_MESSAGE_LENGTH)
-  ]
-} as const
 
 export class OllamaProvider implements LLMProvider {
   private readonly endpoint: string
@@ -78,7 +57,7 @@ export class OllamaProvider implements LLMProvider {
         model: this.model,
         messages: [
           { role: 'system', content: SYSTEM_INSTRUCTION },
-          { role: 'user', content: JSON.stringify(compactBrainInput(input)) }
+          { role: 'user', content: JSON.stringify(serializeBrainInput(input)) }
         ],
         stream: false,
         think: false,
@@ -176,52 +155,6 @@ function nanosecondsToMilliseconds(nanoseconds: number): number {
   return Math.round(nanoseconds / 1_000_000)
 }
 
-function compactBrainInput(input: BrainInput): unknown {
-  const blockSummary = new Map<string, { count: number; nearestDistance: number }>()
-
-  for (const block of input.perception.nearbyBlocks) {
-    const current = blockSummary.get(block.name)
-    if (!current) {
-      blockSummary.set(block.name, {
-        count: 1,
-        nearestDistance: round(block.distance)
-      })
-      continue
-    }
-
-    current.count += 1
-    current.nearestDistance = Math.min(
-      current.nearestDistance,
-      round(block.distance)
-    )
-  }
-
-  return {
-    perception: {
-      agent: input.perception.agent,
-      position: {
-        x: round(input.perception.position.x),
-        y: round(input.perception.position.y),
-        z: round(input.perception.position.z)
-      },
-      health: input.perception.health,
-      food: input.perception.food,
-      nearbyBlocks: [...blockSummary.entries()].map(([name, summary]) => ({
-        name,
-        ...summary
-      })),
-      nearbyEntities: input.perception.nearbyEntities.map(entity => ({
-        name: entity.name,
-        type: entity.type,
-        distance: round(entity.distance)
-      })),
-      inventory: input.perception.inventory
-    },
-    state: input.state,
-    previousActionResult: input.previousActionResult
-  }
-}
-
 function readMessageContent(envelope: unknown): string {
   if (!isRecord(envelope) || !isRecord(envelope.message)) {
     throw new Error('Ollama response is missing message content.')
@@ -258,39 +191,6 @@ function requireNonEmpty(value: string, label: string): string {
   const normalized = value.trim()
   if (!normalized) throw new Error(`${label} is required.`)
   return normalized
-}
-
-function round(value: number): number {
-  return Math.round(value * 10) / 10
-}
-
-function simpleDecisionSchema(action: 'idle' | 'scan' | 'stop') {
-  return {
-    type: 'object',
-    properties: {
-      action: { const: action },
-      reason: { type: 'string', minLength: 1, maxLength: MAX_REASON_LENGTH }
-    },
-    required: ['action', 'reason'],
-    additionalProperties: false
-  }
-}
-
-function targetedDecisionSchema(
-  action: 'follow_player' | 'come_to_player' | 'collect_block' | 'say',
-  targetField: 'username' | 'block' | 'message',
-  maxLength: number
-) {
-  return {
-    type: 'object',
-    properties: {
-      action: { const: action },
-      reason: { type: 'string', minLength: 1, maxLength: MAX_REASON_LENGTH },
-      [targetField]: { type: 'string', minLength: 1, maxLength }
-    },
-    required: ['action', targetField, 'reason'],
-    additionalProperties: false
-  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
