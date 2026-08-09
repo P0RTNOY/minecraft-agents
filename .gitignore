@@ -1,0 +1,22 @@
+# macOS
+.DS_Store
+
+# Environment
+.env
+
+# Node
+node_modules/
+dist/
+
+# Minecraft server runtime
+minecraft/server/paper.jar
+minecraft/server/cache/
+minecraft/server/libraries/
+minecraft/server/logs/
+minecraft/server/versions/
+minecraft/server/world/
+minecraft/server/world_nether/
+minecraft/server/world_the_end/
+minecraft/server/usercache.json
+minecraft/server/eula.txt
+minecraft/server/.console_history
