@@ -1,4 +1,5 @@
 import type { LLMProvider } from '../provider.js'
+import { buildDecisionContext } from '../semantics.js'
 import type {
   AgentDecision,
   AgentDecisionAction,
@@ -79,7 +80,23 @@ export async function runBrainBenchmark(
         continue
       }
 
-      const decision = validation.decision
+      const contextualValidation = validateDecision(
+        output,
+        buildDecisionContext(input)
+      )
+
+      if (!contextualValidation.success) {
+        results.push({
+          ...baseResult(options, scenario.id, sample, latencyMs, null),
+          unsafeTarget: true,
+          error: contextualValidation.issues.map(issue => (
+            `${issue.path || 'decision'}: ${issue.message}`
+          )).join('; ')
+        })
+        continue
+      }
+
+      const decision = contextualValidation.decision
       const signature = decisionSignature(decision)
       results.push({
         scenario: scenario.id,
@@ -91,7 +108,7 @@ export async function runBrainBenchmark(
         action: decision.action,
         reason: decision.reason,
         repeated: signature === previousSignature,
-        unsafeTarget: hasUnsafePlayerTarget(decision, input),
+        unsafeTarget: false,
         schemaFailure: false,
         error: null
       })
@@ -128,27 +145,6 @@ function baseResult(
     schemaFailure: false,
     error
   }
-}
-
-function hasUnsafePlayerTarget(
-  decision: AgentDecision,
-  input: BrainInput
-): boolean {
-  if (
-    decision.action !== 'follow_player' &&
-    decision.action !== 'come_to_player'
-  ) {
-    return false
-  }
-
-  const normalizedTarget = decision.username.toLowerCase()
-  if (normalizedTarget === input.state.agentName.toLowerCase()) return true
-
-  return !input.perception.nearbyEntities.some(entity => (
-    entity.type === 'player' &&
-    entity.name.toLowerCase() === normalizedTarget &&
-    entity.name.toLowerCase() !== input.state.agentName.toLowerCase()
-  ))
 }
 
 function decisionSignature(decision: AgentDecision): string {

@@ -1,4 +1,5 @@
 import type { BrainInput } from './types.js'
+import { buildBrainSemantics } from './semantics.js'
 import {
   MAX_BLOCK_NAME_LENGTH,
   MAX_REASON_LENGTH,
@@ -27,6 +28,7 @@ export const DECISION_JSON_SCHEMA = {
 } as const
 
 export function serializeBrainInput(input: BrainInput): unknown {
+  const semantics = buildBrainSemantics(input)
   const blockSummary = new Map<
     string,
     { count: number; nearestDistance: number }
@@ -51,23 +53,20 @@ export function serializeBrainInput(input: BrainInput): unknown {
 
   return {
     perception: {
-      agent: input.perception.agent,
+      self: semantics.self,
       position: {
         x: round(input.perception.position.x),
         y: round(input.perception.position.y),
         z: round(input.perception.position.z)
       },
-      health: input.perception.health,
-      food: input.perception.food,
+      health: semantics.health,
+      food: semantics.food,
+      externalVisiblePlayers: semantics.externalVisiblePlayers,
       nearbyBlocks: [...blockSummary.entries()].map(([name, summary]) => ({
         name,
         ...summary
       })),
-      nearbyEntities: input.perception.nearbyEntities.map(entity => ({
-        name: entity.name,
-        type: entity.type,
-        distance: round(entity.distance)
-      })),
+      nearbyEntities: semantics.nearbyEntities,
       inventory: input.perception.inventory
     },
     state: input.state,

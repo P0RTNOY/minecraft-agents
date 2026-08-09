@@ -2,6 +2,7 @@ import type { Bot } from 'mineflayer'
 
 import type { AgentState } from './state.js'
 import type { LLMProvider } from '../brain/provider.js'
+import { buildDecisionContext } from '../brain/semantics.js'
 import type {
   AgentDecision,
   BrainInput,
@@ -9,6 +10,7 @@ import type {
 } from '../brain/types.js'
 import {
   validateDecision,
+  type DecisionValidationContext,
   type DecisionValidationResult
 } from '../brain/validateDecision.js'
 import { perceive } from '../perception/perceive.js'
@@ -30,7 +32,10 @@ export interface AgentLoopOptions {
   intervalMs: number
   observe?: (bot: Bot) => PerceptionSnapshot
   execute?: DecisionExecutor
-  validate?: (input: unknown) => DecisionValidationResult
+  validate?: (
+    input: unknown,
+    context?: DecisionValidationContext
+  ) => DecisionValidationResult
   logger?: AgentLoopLogger
 }
 
@@ -56,7 +61,10 @@ export class AutonomousAgentLoop {
   private readonly intervalMs: number
   private readonly observe: (bot: Bot) => PerceptionSnapshot
   private readonly execute: DecisionExecutor
-  private readonly validate: (input: unknown) => DecisionValidationResult
+  private readonly validate: (
+    input: unknown,
+    context?: DecisionValidationContext
+  ) => DecisionValidationResult
   private readonly logger: AgentLoopLogger
 
   private running = false
@@ -140,7 +148,10 @@ export class AutonomousAgentLoop {
         return { status: 'provider_failed', error: message }
       }
 
-      const validation = this.validate(providerOutput)
+      const validation = this.validate(
+        providerOutput,
+        buildDecisionContext(input)
+      )
       if (!validation.success) {
         const issues = validation.issues.map(issue => (
           `${issue.path || 'decision'}: ${issue.message}`

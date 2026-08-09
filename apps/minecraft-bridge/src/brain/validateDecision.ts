@@ -10,6 +10,11 @@ export interface DecisionValidationIssue {
   message: string
 }
 
+export interface DecisionValidationContext {
+  selfUsername: string
+  visibleExternalPlayers: readonly string[]
+}
+
 export type DecisionValidationResult =
   | { success: true; decision: AgentDecision }
   | { success: false; issues: DecisionValidationIssue[] }
@@ -18,7 +23,10 @@ const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f]/
 const BLOCK_NAME = /^[a-z0-9_]+$/
 const USERNAME = /^[A-Za-z0-9_]+$/
 
-export function validateDecision(input: unknown): DecisionValidationResult {
+export function validateDecision(
+  input: unknown,
+  context?: DecisionValidationContext
+): DecisionValidationResult {
   if (!isRecord(input)) {
     return failure('', 'Decision must be a JSON object.')
   }
@@ -49,7 +57,7 @@ export function validateDecision(input: unknown): DecisionValidationResult {
 
     case 'follow_player':
     case 'come_to_player': {
-      const username = readBoundedString(
+      let username = readBoundedString(
         input,
         'username',
         MAX_USERNAME_LENGTH,
@@ -62,6 +70,28 @@ export function validateDecision(input: unknown): DecisionValidationResult {
           path: 'username',
           message: 'Username may contain only letters, numbers, and underscores.'
         })
+      }
+
+      if (username && context && USERNAME.test(username)) {
+        const normalizedUsername = username.toLowerCase()
+        if (normalizedUsername === context.selfUsername.toLowerCase()) {
+          issues.push({
+            path: 'username',
+            message: 'Player target must not be the agent itself.'
+          })
+        } else {
+          const visiblePlayer = context.visibleExternalPlayers.find(
+            player => player.toLowerCase() === normalizedUsername
+          )
+          if (!visiblePlayer) {
+            issues.push({
+              path: 'username',
+              message: 'Player target must be a visible external player.'
+            })
+          } else {
+            username = visiblePlayer
+          }
+        }
       }
 
       if (!reason || !username || issues.length > 0) {

@@ -134,8 +134,8 @@ describe('runBrainBenchmark', () => {
       unsafeTarget: result.unsafeTarget
     })), [
       { scenario: 'invalid', valid: false, schemaFailure: true, unsafeTarget: false },
-      { scenario: 'self_target', valid: true, schemaFailure: false, unsafeTarget: true },
-      { scenario: 'hallucinated_target', valid: true, schemaFailure: false, unsafeTarget: true },
+      { scenario: 'self_target', valid: false, schemaFailure: false, unsafeTarget: true },
+      { scenario: 'hallucinated_target', valid: false, schemaFailure: false, unsafeTarget: true },
       { scenario: 'visible_target', valid: true, schemaFailure: false, unsafeTarget: false }
     ])
   })

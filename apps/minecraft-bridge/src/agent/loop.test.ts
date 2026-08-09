@@ -33,6 +33,54 @@ describe('AutonomousAgentLoop', () => {
     assert.equal(executions, 0)
   })
 
+  it('does not execute self or hallucinated player targets', async () => {
+    const decisions = [
+      { action: 'come_to_player', username: 'Alice', reason: 'Meet Alice.' },
+      { action: 'follow_player', username: 'Alex', reason: 'Follow Alex.' },
+      { action: 'follow_player', username: 'Steve', reason: 'Follow Steve.' }
+    ]
+    let providerCalls = 0
+    let executions = 0
+    const loop = createLoop({
+      provider: {
+        decide: async () => {
+          const decision = decisions[providerCalls]
+          providerCalls += 1
+          return decision
+        }
+      },
+      observe: () => ({
+        agent: 'Alice',
+        timestamp: 1,
+        position: { x: 0, y: 64, z: 0 },
+        health: 20,
+        food: 20,
+        nearbyBlocks: [],
+        nearbyEntities: [{
+          id: 1,
+          name: 'Steve',
+          type: 'player',
+          distance: 4,
+          position: { x: 4, y: 64, z: 0 }
+        }],
+        inventory: []
+      }),
+      execute: async (_bot, decision) => {
+        executions += 1
+        return executionFor(decision)
+      }
+    })
+
+    const selfTarget = await loop.runCycle()
+    const hallucinatedTarget = await loop.runCycle()
+    const externalTarget = await loop.runCycle()
+
+    assert.equal(selfTarget.status, 'validation_failed')
+    assert.equal(hallucinatedTarget.status, 'validation_failed')
+    assert.equal(externalTarget.status, 'executed')
+    assert.equal(executions, 1)
+  })
+
   it('does not overlap provider calls or skill execution', async () => {
     const decision = deferred<unknown>()
     let providerCalls = 0

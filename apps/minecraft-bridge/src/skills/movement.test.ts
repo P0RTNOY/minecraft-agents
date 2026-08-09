@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
+import type { Bot } from 'mineflayer'
 
-import { isExpectedNavigationCancellation } from './movement.js'
+import { createAgentState } from '../agent/state.js'
+import {
+  followPlayer,
+  isExpectedNavigationCancellation
+} from './movement.js'
 
 describe('movement cancellation', () => {
   it('recognizes Pathfinder goal replacement as expected cancellation', () => {
@@ -19,5 +24,22 @@ describe('movement cancellation', () => {
 
     assert.equal(isExpectedNavigationCancellation(error), false)
     assert.equal(isExpectedNavigationCancellation('GoalChanged'), false)
+  })
+
+  it('rejects the agent as a player target before starting pathfinding', () => {
+    const bot = {
+      username: 'Alice',
+      players: { Alice: { entity: {} } }
+    } as unknown as Bot
+    const state = createAgentState('Alice')
+
+    assert.deepEqual(followPlayer(bot, state, 'Alice'), {
+      success: false,
+      action: 'follow_player',
+      status: 'failed',
+      target: 'Alice',
+      reason: 'player_not_visible'
+    })
+    assert.equal(state.busy, false)
   })
 })

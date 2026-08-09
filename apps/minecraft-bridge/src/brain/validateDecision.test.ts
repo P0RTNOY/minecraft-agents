@@ -118,4 +118,37 @@ describe('validateDecision', () => {
     assert.equal(commandMessage.success, false)
     assert.equal(extraField.success, false)
   })
+
+  it('accepts only visible external players when context is provided', () => {
+    const context = {
+      selfUsername: 'Alice',
+      visibleExternalPlayers: ['Steve']
+    }
+    const selfTarget = validateDecision({
+      action: 'come_to_player',
+      username: 'Alice',
+      reason: 'Meet Alice.'
+    }, context)
+    const hallucinatedTarget = validateDecision({
+      action: 'follow_player',
+      username: 'Alex',
+      reason: 'Follow Alex.'
+    }, context)
+    const externalTarget = validateDecision({
+      action: 'follow_player',
+      username: 'steve',
+      reason: 'Follow the visible player.'
+    }, context)
+
+    assert.equal(selfTarget.success, false)
+    assert.equal(hallucinatedTarget.success, false)
+    assert.deepEqual(externalTarget, {
+      success: true,
+      decision: {
+        action: 'follow_player',
+        username: 'Steve',
+        reason: 'Follow the visible player.'
+      }
+    })
+  })
 })
