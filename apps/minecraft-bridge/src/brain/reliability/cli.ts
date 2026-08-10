@@ -30,6 +30,11 @@ import {
   bootstrapWorldCleanupCommands,
   waitForBootstrapStartState
 } from './environment.js'
+import {
+  bootstrapCohort,
+  memoryLayoutForRun,
+  readBootstrapMemoryMode
+} from './experiment.js'
 import { PaperController } from './paper.js'
 import { runBootstrapTrials } from './runner.js'
 import { instrumentProvider } from './telemetry.js'
@@ -45,6 +50,7 @@ const runs = readPositiveInteger(process.env.BOOTSTRAP_RUNS, 5, 'BOOTSTRAP_RUNS'
 const maxDecisions = readPositiveInteger(process.env.BOOTSTRAP_MAX_DECISIONS, 12, 'BOOTSTRAP_MAX_DECISIONS')
 const timeoutMs = readPositiveInteger(process.env.BOOTSTRAP_TIMEOUT_MS, 150_000, 'BOOTSTRAP_TIMEOUT_MS')
 const outputPath = process.env.BOOTSTRAP_OUTPUT?.trim()
+const memoryMode = readBootstrapMemoryMode(process.env.BOOTSTRAP_MEMORY_MODE)
 const serverDirectory = resolve(process.env.MINECRAFT_SERVER_DIR?.trim() || '../../minecraft/server')
 const config = loadBrainConfig({
   ...process.env,
@@ -67,7 +73,7 @@ async function main(): Promise<void> {
       'bootstrap_platform_ready'
     )
 
-    const result = await runBootstrapTrials({
+    const trials = await runBootstrapTrials({
     runs,
     provider: config.provider,
     model: config.model,
@@ -84,7 +90,7 @@ async function main(): Promise<void> {
       }
       contexts.set(runId, context)
       context.memory = config.memoryEnabled
-        ? await createTrialMemory(runId, experimentMemoryDirectory)
+        ? await createTrialMemory(runId, experimentMemoryDirectory, memoryMode)
         : null
       originalPosition ??= {
         x: bot.entity.position.x,
@@ -166,6 +172,14 @@ async function main(): Promise<void> {
     }
   })
 
+    const result = {
+      cohort: bootstrapCohort(
+        config.memoryEnabled,
+        memoryMode,
+        config.memoryReflection
+      ),
+      ...trials
+    }
     const serialized = `${JSON.stringify(result, null, 2)}\n`
     process.stdout.write(serialized)
     if (outputPath) await writeFile(resolve(outputPath), serialized, { mode: 0o600 })
@@ -231,14 +245,13 @@ function requireContext(runId: string): LiveContext {
 
 async function createTrialMemory(
   runId: string,
-  directory: string
+  directory: string,
+  mode: ReturnType<typeof readBootstrapMemoryMode>
 ): Promise<AgentMemory> {
-  const identity: MemoryIdentity = {
-    agentId: 'Alice',
-    worldId: `bootstrap-${runId}`
-  }
+  const layout = memoryLayoutForRun(mode, runId)
+  const identity: MemoryIdentity = layout.identity
   const store = new AtomicJsonMemoryStore({
-    filePath: join(directory, `${runId}.json`),
+    filePath: join(directory, layout.fileName),
     identity
   })
   await store.open()

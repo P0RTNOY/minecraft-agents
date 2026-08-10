@@ -4,6 +4,7 @@ import { describe, it } from 'node:test'
 import type { BrainCycleResult } from '../../agent/loop.js'
 import type { GoalProgress } from '../goals.js'
 import type { LLMProvider } from '../provider.js'
+import type { BrainInput } from '../types.js'
 import {
   BootstrapRunTelemetry,
   instrumentProvider,
@@ -25,7 +26,7 @@ describe('BootstrapRunTelemetry', () => {
       return () => (now += 25)
     })())
 
-    await wrapped.decide({} as never)
+    await wrapped.decide(providerInput())
     telemetry.recordMemoryMetrics({
       episodesCreated: 2,
       episodesRetrieved: 3,
@@ -39,8 +40,6 @@ describe('BootstrapRunTelemetry', () => {
       reflectionOutputTokens: 12,
       estimatedMemoryPromptTokens: 44
     })
-    timing = { promptTokens: 80, outputTokens: 10 }
-    await wrapped.decide({} as never)
     telemetry.recordCycle(executed('craft_item', true, undefined, {
       requested: 4,
       recipeOutput: 4,
@@ -48,6 +47,8 @@ describe('BootstrapRunTelemetry', () => {
       retryCount: 1,
       retryResult: 'succeeded'
     }), progress(false), progress(true))
+    timing = { promptTokens: 80, outputTokens: 10 }
+    await wrapped.decide(providerInput())
     telemetry.recordCycle(executed('craft_item', false, 'inventory_changed', {
       requested: 1,
       recipeOutput: 1,
@@ -75,6 +76,40 @@ describe('BootstrapRunTelemetry', () => {
     assert.equal(result.reflectionInputTokens, 90)
     assert.equal(result.reflectionOutputTokens, 12)
     assert.equal(result.estimatedMemoryPromptTokens, 44)
+    assert.deepEqual(result.memoryRetrievalQuality, {
+      directlyRelevant: 2,
+      weaklyRelevant: 0,
+      irrelevant: 0,
+      staleOrContradicted: 2,
+      total: 4
+    })
+    assert.equal(result.memoryRetrievalTrace.length, 2)
+    assert.equal(
+      JSON.stringify(result.memoryRetrievalTrace).includes('Remembered oak_log'),
+      false
+    )
+    assert.deepEqual(result.decisionTrace, [
+      {
+        providerCall: 1,
+        status: 'executed',
+        action: 'craft_item',
+        target: 'wooden_pickaxe',
+        success: true,
+        progress: true,
+        failureReason: null
+      },
+      {
+        providerCall: 2,
+        status: 'executed',
+        action: 'craft_item',
+        target: 'wooden_pickaxe',
+        success: false,
+        progress: false,
+        failureReason: 'inventory_changed'
+      }
+    ])
+    assert.equal(JSON.stringify(result.decisionTrace).includes('Build.'), false)
+    assert.equal(JSON.stringify(result.decisionTrace).includes('summary'), false)
     assert.equal('memoryPrompt' in result, false)
     assert.equal('providerResponse' in result, false)
     assert.deepEqual(result.llmLatenciesMs, [25, 25])
@@ -110,6 +145,17 @@ describe('BootstrapRunTelemetry', () => {
     assert.equal(summary.totalReflectionCalls, 1)
     assert.equal(summary.reflectionFailureRate, 0)
     assert.equal(summary.totalEstimatedMemoryPromptTokens, 44)
+    assert.equal(summary.totalProviderCalls, 2)
+    assert.equal(summary.meanProviderLatencyMs, 25)
+    assert.equal(summary.medianProviderLatencyMs, 25)
+    assert.equal(summary.averageMemoryPromptTokensPerProviderCall, 22)
+    assert.deepEqual(summary.memoryRetrievalQuality, {
+      directlyRelevant: 2,
+      weaklyRelevant: 0,
+      irrelevant: 0,
+      staleOrContradicted: 2,
+      total: 4
+    })
     assert.equal(result.goalCompleted, true)
     assert.equal(result.success, true)
   })
@@ -138,6 +184,35 @@ describe('BootstrapRunTelemetry', () => {
     assert.equal(createTelemetry().finish({
       completedAt: 2, finalProgress: progress(false), finalInventory: [], infrastructureInvalid: true
     }).failureReason, 'infrastructure_invalid')
+  })
+
+  it('does not associate a skipped cycle with an earlier provider call', () => {
+    const telemetry = createTelemetry()
+    telemetry.recordProviderCall({
+      latencyMs: 10,
+      succeeded: true,
+      timing: null
+    })
+    telemetry.recordCycle(
+      executed('craft_item', true),
+      progress(false),
+      progress(true)
+    )
+    telemetry.recordCycle(
+      { status: 'skipped', reason: 'action_in_progress' },
+      progress(true),
+      progress(true)
+    )
+
+    const result = telemetry.finish({
+      completedAt: 2,
+      finalProgress: progress(true),
+      finalInventory: []
+    })
+    assert.deepEqual(
+      result.decisionTrace.map(event => event.providerCall),
+      [1, null]
+    )
   })
 
   it('keeps failed and infrastructure-invalid attempts in raw summaries', () => {
@@ -172,10 +247,52 @@ describe('BootstrapRunTelemetry', () => {
     assert.equal(summary.infrastructureInvalidRuns, 1)
     assert.equal(summary.goalCompletionRate, 0.5)
     assert.equal(summary.mostCommonFailureReason, 'timeout')
+    assert.deepEqual(summary.failureCounts, { timeout: 1 })
     assert.equal(summary.totalMemoryEpisodesCreated, 0)
     assert.equal(summary.reflectionFailureRate, 0)
+    assert.equal(summary.memoryRetrievalQuality.total, 0)
   })
 })
+
+function providerInput(): BrainInput {
+  return {
+    perception: {
+      agent: 'Alice', timestamp: 1, position: { x: 0, y: 200, z: 0 },
+      health: 20, food: 20,
+      nearbyBlocks: [{
+        name: 'oak_log', distance: 1, position: { x: 1, y: 200, z: 0 }
+      }],
+      nearbyEntities: [], inventory: [{ name: 'oak_log', count: 3 }],
+      edibleItemCount: 0, craftableItems: [], nearbyCraftingTable: false,
+      equippedItem: null, placeableBlocks: []
+    },
+    state: {
+      agentName: 'Alice', status: 'idle', currentAction: null,
+      currentGoal: null, actionSource: null, busy: false
+    },
+    previousActionResult: null,
+    recentDecisions: [],
+    shortTermGoal: {
+      id: 'goal-1', type: 'establish_basic_resources',
+      description: 'Establish basic crafting capability.', status: 'active'
+    },
+    goalProgress: null,
+    availableCapabilities: {
+      observedCollectableBlocks: ['oak_log'], craftableItems: [],
+      placeableBlocks: [], canExplore: true
+    },
+    memory: {
+      recentEpisodes: [{
+        type: 'resource_discovery', summary: 'Remembered oak_log nearby.',
+        importance: 7, age: 'recent', region: '0:0'
+      }],
+      relevantFacts: [{
+        subject: 'crafting_table', relation: 'landmark_observed_near',
+        object: 'region:0:0', confidence: 0.2, status: 'stale', age: 'older'
+      }]
+    }
+  }
+}
 
 function createTelemetry(runId = 'run'): BootstrapRunTelemetry {
   return new BootstrapRunTelemetry({ runId, provider: 'openai', model: 'gpt-5-mini', startedAt: 1 })

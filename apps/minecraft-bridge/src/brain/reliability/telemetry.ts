@@ -1,8 +1,15 @@
 import type { BrainCycleResult } from '../../agent/loop.js'
 import type { InventoryItemSnapshot } from '../../skills/inventory.js'
+import type { AgentDecision, AgentDecisionAction } from '../types.js'
 import type { GoalProgress } from '../goals.js'
 import type { LLMProvider, LLMRequestTiming } from '../provider.js'
+import type { BrainInput } from '../types.js'
 import type { MemoryMetrics } from '../../memory/coordinator.js'
+import {
+  assessMemoryRetrieval,
+  type MemoryRetrievalQualityCounts,
+  type MemoryRetrievalTraceItem
+} from './memoryQuality.js'
 
 export type BootstrapFailureReason =
   | 'model_decision_failure'
@@ -24,6 +31,22 @@ export interface CraftTelemetryEvent {
   retryCount: 0 | 1
   retryResult: 'not_needed' | 'succeeded' | 'failed'
   success: boolean
+  failureReason: string | null
+}
+
+export interface MemoryRetrievalCallTrace {
+  providerCall: number
+  counts: MemoryRetrievalQualityCounts
+  items: MemoryRetrievalTraceItem[]
+}
+
+export interface DecisionTraceEvent {
+  providerCall: number | null
+  status: BrainCycleResult['status']
+  action: AgentDecisionAction | null
+  target: string | null
+  success: boolean | null
+  progress: boolean
   failureReason: string | null
 }
 
@@ -62,6 +85,9 @@ export interface BootstrapRunResult {
   reflectionInputTokens: number
   reflectionOutputTokens: number
   estimatedMemoryPromptTokens: number
+  memoryRetrievalQuality: MemoryRetrievalQualityCounts
+  memoryRetrievalTrace: MemoryRetrievalCallTrace[]
+  decisionTrace: DecisionTraceEvent[]
   llmLatenciesMs: number[]
   actionCounts: Record<string, number>
   skillFailureReasons: Record<string, number>
@@ -107,6 +133,12 @@ export interface BootstrapReliabilitySummary {
   totalReflectionInputTokens: number
   totalReflectionOutputTokens: number
   totalEstimatedMemoryPromptTokens: number
+  totalProviderCalls: number
+  meanProviderLatencyMs: number | null
+  medianProviderLatencyMs: number | null
+  averageMemoryPromptTokensPerProviderCall: number
+  memoryRetrievalQuality: MemoryRetrievalQualityCounts
+  failureCounts: Partial<Record<BootstrapFailureReason, number>>
   mostCommonFailureReason: BootstrapFailureReason | null
 }
 
@@ -114,11 +146,15 @@ export class BootstrapRunTelemetry {
   private readonly identity: Pick<BootstrapRunResult, 'runId' | 'provider' | 'model' | 'startedAt'>
   private firstFailure: BootstrapFailureReason | null = null
   private providerCalls = 0
+  private lastDecisionProviderCall = 0
   private decisionCount = 0
   private inputTokens = 0
   private outputTokens = 0
   private memoryMetrics: MemoryMetrics = emptyMemoryMetrics()
   private readonly llmLatenciesMs: number[] = []
+  private readonly memoryRetrievalQuality = emptyRetrievalQuality()
+  private readonly memoryRetrievalTrace: MemoryRetrievalCallTrace[] = []
+  private readonly decisionTrace: DecisionTraceEvent[] = []
   private progressActionCount = 0
   private noProgressCount = 0
   private skillFailures = 0
@@ -151,11 +187,33 @@ export class BootstrapRunTelemetry {
     this.outputTokens += event.timing?.outputTokens ?? 0
   }
 
+  recordMemoryRetrieval(input: BrainInput): void {
+    const assessment = assessMemoryRetrieval(input)
+    addRetrievalQuality(this.memoryRetrievalQuality, assessment.counts)
+    this.memoryRetrievalTrace.push({
+      providerCall: this.providerCalls + 1,
+      counts: { ...assessment.counts },
+      items: assessment.items.map(item => ({
+        ...item,
+        signals: [...item.signals]
+      }))
+    })
+  }
+
   recordCycle(
     cycle: BrainCycleResult,
     beforeProgress: GoalProgress | null,
     afterProgress: GoalProgress | null
   ): void {
+    const providerCall = this.providerCalls > this.lastDecisionProviderCall
+      ? this.providerCalls
+      : null
+    if (providerCall !== null) this.lastDecisionProviderCall = providerCall
+    this.decisionTrace.push(decisionTraceFor(
+      cycle,
+      providerCall,
+      progressChanged(beforeProgress, afterProgress)
+    ))
     if (cycle.status === 'executed') {
       this.actionCounts[cycle.decision.action] =
         (this.actionCounts[cycle.decision.action] ?? 0) + 1
@@ -258,6 +316,16 @@ export class BootstrapRunTelemetry {
       reflectionOutputTokens: this.memoryMetrics.reflectionOutputTokens,
       estimatedMemoryPromptTokens:
         this.memoryMetrics.estimatedMemoryPromptTokens,
+      memoryRetrievalQuality: { ...this.memoryRetrievalQuality },
+      memoryRetrievalTrace: this.memoryRetrievalTrace.map(trace => ({
+        providerCall: trace.providerCall,
+        counts: { ...trace.counts },
+        items: trace.items.map(item => ({
+          ...item,
+          signals: [...item.signals]
+        }))
+      })),
+      decisionTrace: this.decisionTrace.map(event => ({ ...event })),
       llmLatenciesMs: [...this.llmLatenciesMs],
       actionCounts: { ...this.actionCounts },
       skillFailureReasons: { ...this.skillFailureReasons },
@@ -316,6 +384,7 @@ export function instrumentProvider(
     async decide(input) {
       const startedAt = now()
       let succeeded = false
+      telemetry.recordMemoryRetrieval(input)
       try {
         const output = await provider.decide(input)
         succeeded = true
@@ -339,6 +408,11 @@ export function summarizeBootstrapRuns(
   const completed = valid.filter(run => run.goalCompleted)
   const totalActions = sum(valid, run => run.progressActionCount + run.noProgressCount)
   const totalCalls = sum(valid, run => run.providerCalls)
+  const latencies = valid.flatMap(run => run.llmLatenciesMs)
+  const memoryRetrievalQuality = emptyRetrievalQuality()
+  for (const run of valid) {
+    addRetrievalQuality(memoryRetrievalQuality, run.memoryRetrievalQuality)
+  }
   const craftEvents = valid.flatMap(run => run.craftEvents ?? [])
   const retriedCrafts = craftEvents.filter(event => event.retryCount === 1)
   const failureCounts = new Map<BootstrapFailureReason, number>()
@@ -406,9 +480,43 @@ export function summarizeBootstrapRuns(
       valid,
       run => run.estimatedMemoryPromptTokens
     ),
+    totalProviderCalls: totalCalls,
+    meanProviderLatencyMs: mean(latencies),
+    medianProviderLatencyMs: median(latencies),
+    averageMemoryPromptTokensPerProviderCall: ratio(
+      sum(valid, run => run.estimatedMemoryPromptTokens),
+      totalCalls
+    ),
+    memoryRetrievalQuality,
+    failureCounts: Object.fromEntries(
+      [...failureCounts.entries()].sort((left, right) => (
+        left[0].localeCompare(right[0])
+      ))
+    ),
     mostCommonFailureReason: [...failureCounts.entries()]
       .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))[0]?.[0] ?? null
   }
+}
+
+function emptyRetrievalQuality(): MemoryRetrievalQualityCounts {
+  return {
+    directlyRelevant: 0,
+    weaklyRelevant: 0,
+    irrelevant: 0,
+    staleOrContradicted: 0,
+    total: 0
+  }
+}
+
+function addRetrievalQuality(
+  target: MemoryRetrievalQualityCounts,
+  source: MemoryRetrievalQualityCounts
+): void {
+  target.directlyRelevant += source.directlyRelevant
+  target.weaklyRelevant += source.weaklyRelevant
+  target.irrelevant += source.irrelevant
+  target.staleOrContradicted += source.staleOrContradicted
+  target.total += source.total
 }
 
 function emptyMemoryMetrics(): MemoryMetrics {
@@ -429,6 +537,49 @@ function emptyMemoryMetrics(): MemoryMetrics {
 
 function classifyExecutionFailure(cycle: Extract<BrainCycleResult, { status: 'executed' }>): BootstrapFailureReason {
   return classifyResultDetails(cycle.result)
+}
+
+function decisionTraceFor(
+  cycle: BrainCycleResult,
+  providerCall: number | null,
+  progress: boolean
+): DecisionTraceEvent {
+  const decision = cycle.status === 'executed' || cycle.status === 'policy_rejected'
+    ? cycle.decision
+    : null
+  const result = cycle.status === 'executed' || cycle.status === 'execution_failed'
+    ? cycle.result
+    : null
+  const failureReason = result && !result.success
+    ? controlledTraceValue(result.details?.reason)
+    : cycle.status === 'policy_rejected'
+      ? cycle.reason
+      : null
+  return {
+    providerCall,
+    status: cycle.status,
+    action: decision?.action ?? result?.action ?? null,
+    target: decisionTargetForTrace(decision),
+    success: result?.success ?? null,
+    progress,
+    failureReason
+  }
+}
+
+function decisionTargetForTrace(decision: AgentDecision | null): string | null {
+  if (!decision) return null
+  switch (decision.action) {
+    case 'collect_block': return controlledTraceValue(decision.block)
+    case 'craft_item': return controlledTraceValue(decision.item)
+    case 'place_block': return controlledTraceValue(decision.block)
+    default: return null
+  }
+}
+
+function controlledTraceValue(value: unknown): string | null {
+  return typeof value === 'string' && /^[a-z0-9][a-z0-9_:-]{0,127}$/.test(value)
+    ? value
+    : null
 }
 
 function classifyResultDetails(result: { action: string, details?: Record<string, unknown> }): BootstrapFailureReason {
