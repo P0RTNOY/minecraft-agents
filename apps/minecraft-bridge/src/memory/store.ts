@@ -15,10 +15,12 @@ import {
   type EpisodicMemory,
   type MemoryDocumentV1,
   type MemoryIdentity,
+  type MemoryQuery,
   type MemoryStore,
   type ReflectionCursor,
   type SemanticMemory
 } from './types.js'
+import { rankEpisodes, rankSemanticFacts } from './retrieval.js'
 import {
   decodeEpisode,
   decodeMemoryDocument,
@@ -152,6 +154,12 @@ export class AtomicJsonMemoryStore implements MemoryStore {
       .map(cloneEpisode)
   }
 
+  async findRelevantEpisodes(query: MemoryQuery): Promise<EpisodicMemory[]> {
+    await this.mutationQueue
+    this.requireMatchingIdentity(query)
+    return rankEpisodes(this.requireOpen().episodes, query)
+  }
+
   addSemanticFact(fact: SemanticMemory): Promise<void> {
     const decoded = decodeSemanticMemory(fact)
     this.requireMatchingIdentity(decoded)
@@ -174,6 +182,12 @@ export class AtomicJsonMemoryStore implements MemoryStore {
       ))
       .slice(0, listLimit(limit))
       .map(cloneFact)
+  }
+
+  async findRelevantFacts(query: MemoryQuery): Promise<SemanticMemory[]> {
+    await this.mutationQueue
+    this.requireMatchingIdentity(query)
+    return rankSemanticFacts(this.requireOpen().semanticFacts, query)
   }
 
   async reflectionState(): Promise<ReflectionCursor> {

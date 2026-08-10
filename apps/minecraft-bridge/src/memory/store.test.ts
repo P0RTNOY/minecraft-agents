@@ -19,6 +19,7 @@ import {
 import type {
   EpisodicMemory,
   MemoryIdentity,
+  MemoryQuery,
   SemanticMemory
 } from './types.js'
 
@@ -308,6 +309,42 @@ describe('AtomicJsonMemoryStore', () => {
     const reopened = new AtomicJsonMemoryStore({ filePath, identity })
     await reopened.open()
     assert.equal((await reopened.listRecentEpisodes(100)).length, 20)
+  })
+
+  it('delegates bounded relevant retrieval without crossing identity boundaries', async () => {
+    const filePath = await memoryFile()
+    const store = new AtomicJsonMemoryStore({ filePath, identity })
+    const query: MemoryQuery = {
+      ...identity,
+      now: 100,
+      region: '0:0',
+      goalType: 'explore_for_resources',
+      observedNames: ['oak_log'],
+      recentFailureSignatures: [],
+      episodeLimit: 1,
+      factLimit: 1
+    }
+    await store.open()
+    await store.addEpisode(episode({ id: 'relevant', importance: 8 }))
+    await store.addEpisode(episode({
+      id: 'less-relevant',
+      importance: 2,
+      context: { region: '2:2', target: 'stone' }
+    }))
+    await store.addSemanticFact(semanticFact({ id: 'relevant-fact' }))
+
+    assert.deepEqual(
+      (await store.findRelevantEpisodes(query)).map(item => item.id),
+      ['relevant']
+    )
+    assert.deepEqual(
+      (await store.findRelevantFacts(query)).map(item => item.id),
+      ['relevant-fact']
+    )
+    await assert.rejects(
+      () => store.findRelevantEpisodes({ ...query, agentId: 'Bob' }),
+      /identity does not match/i
+    )
   })
 })
 

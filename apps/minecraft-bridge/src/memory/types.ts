@@ -77,6 +77,47 @@ export interface ReflectionCursor {
   lastReflectionAt: number | null
 }
 
+export interface MemoryQuery extends MemoryIdentity {
+  now: number
+  region: string
+  goalType: string | null
+  observedNames: readonly string[]
+  recentFailureSignatures: readonly string[]
+  episodeLimit: number
+  factLimit: number
+}
+
+export interface FactPerceptionEvidence {
+  observedAt: number
+  region: string
+  regionCovered: boolean
+  observedNames: readonly string[]
+}
+
+export type MemoryAge = 'current' | 'recent' | 'today' | 'older'
+
+export interface CompactEpisode {
+  type: EpisodeType
+  summary: string
+  importance: number
+  age: MemoryAge
+  region?: string
+}
+
+export interface CompactFact {
+  subject: string
+  relation: SemanticRelation
+  object: string
+  confidence: number
+  status: SemanticMemory['status']
+  age: MemoryAge
+}
+
+export interface MemoryContext {
+  recentEpisodes: readonly CompactEpisode[]
+  relevantFacts: readonly CompactFact[]
+}
+
 export interface MemoryDocumentV1 {
   schemaVersion: typeof MEMORY_SCHEMA_VERSION
   identity: MemoryIdentity
@@ -90,8 +131,10 @@ export interface MemoryStore {
   open(): Promise<void>
   addEpisode(episode: EpisodicMemory): Promise<void>
   listRecentEpisodes(limit: number): Promise<EpisodicMemory[]>
+  findRelevantEpisodes(query: MemoryQuery): Promise<EpisodicMemory[]>
   addSemanticFact(fact: SemanticMemory): Promise<void>
   listSemanticFacts(limit: number): Promise<SemanticMemory[]>
+  findRelevantFacts(query: MemoryQuery): Promise<SemanticMemory[]>
   reflectionState(): Promise<ReflectionCursor>
   updateReflectionState(state: ReflectionCursor): Promise<void>
 }
