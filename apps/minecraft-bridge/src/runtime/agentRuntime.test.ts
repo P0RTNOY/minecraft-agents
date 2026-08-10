@@ -408,7 +408,15 @@ function brainConfig(): BrainConfig {
     memoryFactLimit: 4,
     debugMemory: false,
     memoryReflection: false,
-    memoryReflectionModel: 'gpt-5-mini'
+    memoryReflectionModel: 'gpt-5-mini',
+    socialEnabled: false,
+    socialAutoGreeting: false,
+    socialModel: 'gpt-5-mini',
+    socialMaxTurns: 4,
+    socialCooldownMs: 60_000,
+    socialTurnTimeoutMs: 15_000,
+    socialMaxMessageChars: 180,
+    socialDirectory: 'data/social'
   }
 }
 
