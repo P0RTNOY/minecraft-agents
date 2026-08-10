@@ -24,6 +24,8 @@ import {
   type AgentMemory
 } from './memory/coordinator.js'
 import { MemoryEventRecorder } from './memory/recorder.js'
+import { MemoryReflector } from './memory/reflection.js'
+import { OpenAIReflectionProvider } from './memory/providers/openaiReflection.js'
 import { AtomicJsonMemoryStore } from './memory/store.js'
 import type { MemoryIdentity } from './memory/types.js'
 
@@ -185,13 +187,34 @@ async function initializeMemory(config: BrainConfig): Promise<AgentMemory | null
     console.log(
       `🧠 Persistent memory enabled for ${identity.agentId}/${identity.worldId}`
     )
+    let reflector: MemoryReflector | undefined
+    if (config.memoryReflection) {
+      try {
+        reflector = new MemoryReflector({
+          store,
+          provider: new OpenAIReflectionProvider({
+            baseUrl: config.openaiBaseUrl,
+            apiKey: config.openaiApiKey,
+            model: config.memoryReflectionModel
+          })
+        })
+        console.log(
+          `🧠 Optional memory reflection enabled with ${config.memoryReflectionModel}`
+        )
+      } catch {
+        console.error(
+          '❌ Optional memory reflection disabled: invalid provider configuration.'
+        )
+      }
+    }
     return new AgentMemoryCoordinator({
       store,
       recorder: new MemoryEventRecorder({ identity }),
       identity,
       episodeLimit: config.memoryEpisodeLimit,
       factLimit: config.memoryFactLimit,
-      debug: config.debugMemory
+      debug: config.debugMemory,
+      ...(reflector ? { reflector } : {})
     })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error.'

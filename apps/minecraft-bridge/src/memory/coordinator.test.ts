@@ -6,6 +6,7 @@ import {
   type MemoryCycleEvent
 } from './coordinator.js'
 import { EMPTY_MEMORY_CONTEXT } from './retrieval.js'
+import { MemoryReflector } from './reflection.js'
 import type {
   EpisodicMemory,
   MemoryIdentity,
@@ -166,7 +167,11 @@ describe('AgentMemoryCoordinator', () => {
       semanticFactsCreated: 0,
       semanticFactsRetrieved: 1,
       retrievalFailures: 0,
-      persistenceFailures: 0
+      persistenceFailures: 0,
+      reflectionCalls: 0,
+      reflectionFailures: 0,
+      reflectionInputTokens: 0,
+      reflectionOutputTokens: 0
     })
   })
 
@@ -224,6 +229,102 @@ describe('AgentMemoryCoordinator', () => {
     assert.equal(recorded.error, 'Memory store operation failed.')
     assert.equal(coordinator.metrics().retrievalFailures, 1)
     assert.equal(coordinator.metrics().persistenceFailures, 1)
+  })
+
+  it('records reflection usage and adds validated facts after deterministic writes', async () => {
+    const store = new MemoryStoreDouble()
+    store.episodes.push(...Array.from({ length: 4 }, (_, index) => episode({
+      id: `prior-${index}`,
+      timestamp: 900 + index,
+      type: 'action_failure',
+      context: { region: '0:0', action: 'explore', outcome: `blocked_${index}` }
+    })))
+    const reflector = new MemoryReflector({
+      store,
+      provider: {
+        reflect: async episodes => ({
+          candidates: { candidates: [{
+            subject: 'explore',
+            relation: 'outcome_repeated_near',
+            object: 'region:0:0',
+            confidence: 0.7,
+            evidenceEpisodeIds: [episodes[0]?.id, episodes[1]?.id]
+          }] },
+          timing: { inputTokens: 90, outputTokens: 20 }
+        })
+      },
+      now: () => 2_000
+    })
+    const coordinator = new AgentMemoryCoordinator({
+      store,
+      recorder: { observe: () => [episode({
+        id: 'new-failure',
+        timestamp: 1_000,
+        type: 'action_failure',
+        context: { region: '0:0', action: 'explore', outcome: 'blocked_new' }
+      })] },
+      identity,
+      reflector
+    })
+
+    const recorded = await coordinator.record(cycleEvent())
+
+    assert.equal(recorded.semanticFactsCreated, 1)
+    assert.deepEqual(coordinator.metrics(), {
+      episodesCreated: 1,
+      episodesRetrieved: 0,
+      semanticFactsCreated: 1,
+      semanticFactsRetrieved: 0,
+      retrievalFailures: 0,
+      persistenceFailures: 0,
+      reflectionCalls: 1,
+      reflectionFailures: 0,
+      reflectionInputTokens: 90,
+      reflectionOutputTokens: 20
+    })
+  })
+
+  it('keeps a failed reflection non-fatal and preserves its cursor for retry', async () => {
+    const store = new MemoryStoreDouble()
+    store.episodes.push(...Array.from({ length: 4 }, (_, index) => episode({
+      id: `prior-${index}`,
+      timestamp: 900 + index,
+      type: 'action_failure',
+      context: { region: '0:0', action: 'explore', outcome: `blocked_${index}` }
+    })))
+    let calls = 0
+    const reflector = new MemoryReflector({
+      store,
+      provider: {
+        reflect: async () => {
+          calls += 1
+          throw new Error('provider payload must not escape')
+        }
+      },
+      now: () => 2_000
+    })
+    const coordinator = new AgentMemoryCoordinator({
+      store,
+      recorder: { observe: () => [episode({
+        id: 'new-failure',
+        timestamp: 1_000,
+        type: 'action_failure',
+        context: { region: '0:0', action: 'explore', outcome: 'blocked_new' }
+      })] },
+      identity,
+      reflector
+    })
+
+    const recorded = await coordinator.record(cycleEvent())
+
+    assert.deepEqual(recorded, { episodesCreated: 1, semanticFactsCreated: 0 })
+    assert.equal(calls, 1)
+    assert.equal(store.facts.length, 0)
+    assert.equal(store.cursor.lastReflectedEpisodeTimestamp, null)
+    assert.equal(store.cursor.lastReflectionAt, 2_000)
+    assert.equal(coordinator.metrics().reflectionCalls, 1)
+    assert.equal(coordinator.metrics().reflectionFailures, 1)
+    assert.equal(coordinator.metrics().persistenceFailures, 0)
   })
 })
 

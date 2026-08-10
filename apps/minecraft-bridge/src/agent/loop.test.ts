@@ -744,7 +744,11 @@ function memoryDouble(overrides: Partial<AgentMemory> = {}): AgentMemory {
       semanticFactsCreated: 0,
       semanticFactsRetrieved: 0,
       retrievalFailures: 0,
-      persistenceFailures: 0
+      persistenceFailures: 0,
+      reflectionCalls: 0,
+      reflectionFailures: 0,
+      reflectionInputTokens: 0,
+      reflectionOutputTokens: 0
     }),
     ...overrides
   }

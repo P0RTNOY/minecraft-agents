@@ -19,6 +19,10 @@ import {
   regionForPosition
 } from './recorder.js'
 import type {
+  MemoryReflector,
+  ReflectionAttemptResult
+} from './reflection.js'
+import type {
   EpisodicMemory,
   MemoryContext,
   MemoryIdentity,
@@ -51,6 +55,10 @@ export interface MemoryMetrics {
   semanticFactsRetrieved: number
   retrievalFailures: number
   persistenceFailures: number
+  reflectionCalls: number
+  reflectionFailures: number
+  reflectionInputTokens: number
+  reflectionOutputTokens: number
 }
 
 export interface MemoryRetrievalResult {
@@ -83,6 +91,7 @@ export interface AgentMemoryCoordinatorOptions {
   factLimit?: number
   debug?: boolean
   logger?: MemoryCoordinatorLogger
+  reflector?: Pick<MemoryReflector, 'consider'>
 }
 
 export class AgentMemoryCoordinator implements AgentMemory {
@@ -93,13 +102,18 @@ export class AgentMemoryCoordinator implements AgentMemory {
   private readonly factLimit: number
   private readonly debug: boolean
   private readonly logger: MemoryCoordinatorLogger
+  private readonly reflector: Pick<MemoryReflector, 'consider'> | null
   private readonly counters: MemoryMetrics = {
     episodesCreated: 0,
     episodesRetrieved: 0,
     semanticFactsCreated: 0,
     semanticFactsRetrieved: 0,
     retrievalFailures: 0,
-    persistenceFailures: 0
+    persistenceFailures: 0,
+    reflectionCalls: 0,
+    reflectionFailures: 0,
+    reflectionInputTokens: 0,
+    reflectionOutputTokens: 0
   }
 
   constructor(options: AgentMemoryCoordinatorOptions) {
@@ -110,6 +124,7 @@ export class AgentMemoryCoordinator implements AgentMemory {
     this.factLimit = retrievalLimit(options.factLimit ?? 4)
     this.debug = options.debug ?? false
     this.logger = options.logger ?? console
+    this.reflector = options.reflector ?? null
   }
 
   async retrieve(
@@ -187,6 +202,15 @@ export class AgentMemoryCoordinator implements AgentMemory {
           this.logger.log(`🧠 Memory: stored episode [${episode.type}]`)
         }
       }
+      const reflection = await this.considerReflection()
+      semanticFactsCreated += reflection.factsCreated
+      this.counters.semanticFactsCreated += reflection.factsCreated
+      if (this.debug && reflection.factsCreated > 0) {
+        const label = reflection.factsCreated === 1 ? 'fact' : 'facts'
+        this.logger.log(
+          `🧠 Reflection: created ${reflection.factsCreated} semantic ${label}`
+        )
+      }
       return { episodesCreated, semanticFactsCreated }
     } catch (error) {
       this.counters.episodesCreated += episodesCreated
@@ -200,6 +224,39 @@ export class AgentMemoryCoordinator implements AgentMemory {
 
   metrics(): MemoryMetrics {
     return { ...this.counters }
+  }
+
+  private async considerReflection(): Promise<ReflectionAttemptResult> {
+    if (!this.reflector) {
+      return {
+        attempted: false,
+        factsCreated: 0,
+        rejectedCandidates: 0,
+        inputTokens: 0,
+        outputTokens: 0
+      }
+    }
+    let result: ReflectionAttemptResult
+    try {
+      result = await this.reflector.consider()
+    } catch {
+      result = {
+        attempted: true,
+        factsCreated: 0,
+        rejectedCandidates: 0,
+        inputTokens: 0,
+        outputTokens: 0,
+        error: 'Memory reflection failed.'
+      }
+    }
+    if (result.attempted) this.counters.reflectionCalls += 1
+    if (result.error) this.counters.reflectionFailures += 1
+    this.counters.reflectionInputTokens += result.inputTokens
+    this.counters.reflectionOutputTokens += result.outputTokens
+    if (this.debug && result.error) {
+      this.logger.error(`🧠 Reflection failed: ${result.error}`)
+    }
+    return result
   }
 
   private async reconcileCurrentPerception(
