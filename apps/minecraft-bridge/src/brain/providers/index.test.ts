@@ -19,7 +19,15 @@ const config: BrainConfig = {
   groqApiKey: 'test-api-key',
   openaiBaseUrl: 'https://api.openai.com/v1',
   openaiApiKey: 'test-openai-key',
-  debugTiming: false
+  debugTiming: false,
+  memoryEnabled: true,
+  memoryWorldId: 'local-paper',
+  memoryDirectory: 'data/memory',
+  memoryEpisodeLimit: 4,
+  memoryFactLimit: 4,
+  debugMemory: false,
+  memoryReflection: false,
+  memoryReflectionModel: 'gpt-5-mini'
 }
 
 describe('createLLMProvider', () => {

@@ -97,7 +97,8 @@ const input: BrainInput = {
     }],
     placeableBlocks: [{ name: 'crafting_table', count: 1 }],
     canExplore: true
-  }
+  },
+  memory: { recentEpisodes: [], relevantFacts: [] }
 }
 
 describe('buildBrainSemantics', () => {

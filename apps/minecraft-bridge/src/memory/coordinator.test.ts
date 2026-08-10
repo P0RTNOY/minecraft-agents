@@ -311,7 +311,8 @@ function brainInput(
       craftableItems: [],
       placeableBlocks: [],
       canExplore: true
-    }
+    },
+    memory: { recentEpisodes: [], relevantFacts: [] }
   }
 }
 

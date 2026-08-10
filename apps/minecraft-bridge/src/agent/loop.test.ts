@@ -14,10 +14,192 @@ import {
   AutonomousAgentLoop,
   type AgentLoopOptions
 } from './loop.js'
+import type {
+  AgentMemory,
+  MemoryCycleEvent
+} from '../memory/coordinator.js'
 
 const fakeBot = {} as Bot
 
 describe('AutonomousAgentLoop', () => {
+  it('retrieves memory before provider input and records after execution', async () => {
+    const order: string[] = []
+    const recorded: MemoryCycleEvent[] = []
+    const loop = createLoop({
+      memory: memoryDouble({
+        retrieve: async () => {
+          order.push('retrieve')
+          return {
+            context: {
+              recentEpisodes: [{
+                type: 'action_failure',
+                summary: 'A prior attempt failed.',
+                importance: 6,
+                age: 'recent',
+                region: '0:0'
+              }],
+              relevantFacts: []
+            }
+          }
+        },
+        record: async event => {
+          order.push('record')
+          recorded.push(event)
+          return { episodesCreated: 1, semanticFactsCreated: 0 }
+        }
+      }),
+      provider: {
+        decide: async input => {
+          order.push('provider')
+          assert.equal(input.memory.recentEpisodes.length, 1)
+          return { action: 'idle', reason: 'Wait.' }
+        }
+      },
+      execute: async (_bot, decision) => {
+        order.push('execute')
+        return executionFor(decision)
+      }
+    })
+
+    const result = await loop.runCycle()
+
+    assert.equal(result.status, 'executed')
+    assert.deepEqual(order, ['retrieve', 'provider', 'execute', 'record'])
+    assert.equal(recorded[0]?.decision.action, 'idle')
+    assert.equal(recorded[0]?.result.success, true)
+  })
+
+  it('records failed controlled outcomes and completed goal transitions', async () => {
+    const recorded: MemoryCycleEvent[] = []
+    const loop = createLoop({
+      memory: memoryDouble({
+        record: async event => {
+          recorded.push(event)
+          return { episodesCreated: 1, semanticFactsCreated: 0 }
+        }
+      }),
+      goalManager: {
+        update: () => ({
+          shortTermGoal: null,
+          goalProgress: null,
+          availableCapabilities: {
+            observedCollectableBlocks: [],
+            craftableItems: [],
+            placeableBlocks: [],
+            canExplore: true
+          },
+          transition: {
+            completedGoal: {
+              id: 'goal-1',
+              type: 'establish_basic_resources',
+              description: 'Bootstrap.',
+              status: 'completed'
+            },
+            nextGoal: null
+          }
+        })
+      },
+      provider: {
+        decide: async () => ({ action: 'explore', reason: 'Explore.' })
+      },
+      execute: async () => ({
+        success: false,
+        action: 'explore',
+        status: 'failed',
+        summary: 'Navigation failed.',
+        details: { reason: 'navigation_failed' }
+      })
+    })
+
+    await loop.runCycle()
+
+    assert.equal(recorded.length, 1)
+    assert.equal(recorded[0]?.result.success, false)
+    assert.equal(
+      recorded[0]?.goalTransition?.completedGoal?.type,
+      'establish_basic_resources'
+    )
+  })
+
+  it('uses empty history after a memory failure without bypassing decisions', async () => {
+    let executions = 0
+    const loop = createLoop({
+      memory: memoryDouble({
+        retrieve: async () => {
+          throw new Error('memory unavailable')
+        }
+      }),
+      provider: {
+        decide: async input => {
+          assert.deepEqual(input.memory, {
+            recentEpisodes: [],
+            relevantFacts: []
+          })
+          return { action: 'idle', reason: 'Wait.' }
+        }
+      },
+      execute: async (_bot, decision) => {
+        executions += 1
+        return executionFor(decision)
+      }
+    })
+
+    assert.equal((await loop.runCycle()).status, 'executed')
+    assert.equal(executions, 1)
+  })
+
+  it('does not change a successful cycle when memory persistence fails', async () => {
+    const loop = createLoop({
+      memory: memoryDouble({
+        record: async () => {
+          throw new Error('memory write unavailable')
+        }
+      })
+    })
+
+    const result = await loop.runCycle()
+
+    assert.equal(result.status, 'executed')
+    if (result.status === 'executed') {
+      assert.equal(result.result.success, true)
+    }
+  })
+
+  it('does not ground a target that exists only in memory', async () => {
+    let executions = 0
+    const loop = createLoop({
+      memory: memoryDouble({
+        retrieve: async () => ({
+          context: {
+            recentEpisodes: [],
+            relevantFacts: [{
+              subject: 'diamond_ore',
+              relation: 'resource_observed_near',
+              object: 'region:0:0',
+              confidence: 1,
+              status: 'historical',
+              age: 'recent'
+            }]
+          }
+        })
+      }),
+      provider: {
+        decide: async () => ({
+          action: 'collect_block',
+          block: 'diamond_ore',
+          reason: 'Collect remembered ore.'
+        })
+      },
+      execute: async () => {
+        executions += 1
+        return successfulIdleResult()
+      }
+    })
+
+    assert.equal((await loop.runCycle()).status, 'validation_failed')
+    assert.equal(executions, 0)
+  })
+
   it('provides current goal progress and grounded capabilities to the Brain', async () => {
     const observedInputs: BrainInput[] = []
     const loop = createLoop({
@@ -547,6 +729,24 @@ function successfulIdleResult() {
     action: 'idle' as const,
     status: 'completed' as const,
     summary: 'Idle completed.'
+  }
+}
+
+function memoryDouble(overrides: Partial<AgentMemory> = {}): AgentMemory {
+  return {
+    retrieve: async () => ({
+      context: { recentEpisodes: [], relevantFacts: [] }
+    }),
+    record: async () => ({ episodesCreated: 0, semanticFactsCreated: 0 }),
+    metrics: () => ({
+      episodesCreated: 0,
+      episodesRetrieved: 0,
+      semanticFactsCreated: 0,
+      semanticFactsRetrieved: 0,
+      retrievalFailures: 0,
+      persistenceFailures: 0
+    }),
+    ...overrides
   }
 }
 

@@ -1,5 +1,7 @@
 import mineflayer from 'mineflayer'
 import { pathfinder } from 'mineflayer-pathfinder'
+import { createHash } from 'node:crypto'
+import { isAbsolute, join, resolve } from 'node:path'
 
 import { ActionArbiter } from './agent/actionArbiter.js'
 import { cancelAgentAction } from './agent/cancelAction.js'
@@ -17,8 +19,16 @@ import { perceive } from './perception/perceive.js'
 import { followNearestPlayer } from './skills/index.js'
 import { createDefaultDecisionExecutor } from './skills/execute.js'
 import { ReflexLoop } from './survival/reflexLoop.js'
+import {
+  AgentMemoryCoordinator,
+  type AgentMemory
+} from './memory/coordinator.js'
+import { MemoryEventRecorder } from './memory/recorder.js'
+import { AtomicJsonMemoryStore } from './memory/store.js'
+import type { MemoryIdentity } from './memory/types.js'
 
 const agentName = 'Alice'
+const appDirectory = resolve(__dirname, '..')
 const bot = mineflayer.createBot({
   host: 'localhost',
   port: 25565,
@@ -57,22 +67,25 @@ bot.once('spawn', () => {
   }
 
   if (runtime?.provider) {
-    const { config, provider } = runtime
+    const { config, provider, memory } = runtime
     setTimeout(() => {
-      autonomousLoop = new AutonomousAgentLoop({
-        bot,
-        state,
-        arbiter,
-        provider,
-        intervalMs: config.tickIntervalMs,
-        execute: createDefaultDecisionExecutor({
-          explorationRadius: config.explorationRadius
+      void memory.then(agentMemory => {
+        autonomousLoop = new AutonomousAgentLoop({
+          bot,
+          state,
+          arbiter,
+          provider,
+          intervalMs: config.tickIntervalMs,
+          execute: createDefaultDecisionExecutor({
+            explorationRadius: config.explorationRadius
+          }),
+          ...(agentMemory ? { memory: agentMemory } : {})
         })
+        console.log(
+          `🧠 Autonomous mode enabled with ${config.provider}/${config.model}`
+        )
+        autonomousLoop.start()
       })
-      console.log(
-        `🧠 Autonomous mode enabled with ${config.provider}/${config.model}`
-      )
-      autonomousLoop.start()
     }, 4000)
   } else {
     setTimeout(() => {
@@ -136,17 +149,64 @@ bot.on('end', () => {
 function configureRuntime(): {
   config: BrainConfig
   provider: LLMProvider | null
+  memory: Promise<AgentMemory | null>
 } | null {
   try {
     const config = loadBrainConfig()
 
     return {
       config,
-      provider: config.autonomous ? createLLMProvider(config) : null
+      provider: config.autonomous ? createLLMProvider(config) : null,
+      memory: config.autonomous && config.memoryEnabled
+        ? initializeMemory(config)
+        : Promise.resolve(null)
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     console.error(`❌ Agent runtime configuration disabled: ${message}`)
     return null
   }
+}
+
+async function initializeMemory(config: BrainConfig): Promise<AgentMemory | null> {
+  const identity: MemoryIdentity = {
+    agentId: agentName,
+    worldId: config.memoryWorldId
+  }
+  const directory = isAbsolute(config.memoryDirectory)
+    ? config.memoryDirectory
+    : resolve(appDirectory, config.memoryDirectory)
+  const store = new AtomicJsonMemoryStore({
+    filePath: join(directory, memoryFileName(identity)),
+    identity
+  })
+  try {
+    await store.open()
+    console.log(
+      `🧠 Persistent memory enabled for ${identity.agentId}/${identity.worldId}`
+    )
+    return new AgentMemoryCoordinator({
+      store,
+      recorder: new MemoryEventRecorder({ identity }),
+      identity,
+      episodeLimit: config.memoryEpisodeLimit,
+      factLimit: config.memoryFactLimit,
+      debug: config.debugMemory
+    })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error.'
+    console.error(`❌ Persistent memory disabled: ${message}`)
+    return null
+  }
+}
+
+function memoryFileName(identity: MemoryIdentity): string {
+  const label = `${identity.agentId}-${identity.worldId}`
+    .replace(/[^A-Za-z0-9._-]/g, '_')
+    .slice(0, 96)
+  const digest = createHash('sha256')
+    .update(`${identity.agentId}\0${identity.worldId}`)
+    .digest('hex')
+    .slice(0, 16)
+  return `${label}-${digest}.json`
 }

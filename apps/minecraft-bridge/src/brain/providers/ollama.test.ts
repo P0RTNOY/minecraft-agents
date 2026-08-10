@@ -40,7 +40,8 @@ const brainInput: BrainInput = {
     craftableItems: [],
     placeableBlocks: [],
     canExplore: true
-  }
+  },
+  memory: { recentEpisodes: [], relevantFacts: [] }
 }
 
 describe('OllamaProvider', () => {

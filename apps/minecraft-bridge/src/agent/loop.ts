@@ -24,6 +24,11 @@ import {
 } from '../brain/validateDecision.js'
 import { perceive } from '../perception/perceive.js'
 import type { PerceptionSnapshot } from '../perception/types.js'
+import type {
+  AgentMemory,
+  MemoryCycleEvent
+} from '../memory/coordinator.js'
+import { EMPTY_MEMORY_CONTEXT } from '../memory/retrieval.js'
 import {
   executeDecision,
   type DecisionExecutor
@@ -48,6 +53,7 @@ export interface AgentLoopOptions {
   ) => DecisionValidationResult
   logger?: AgentLoopLogger
   goalManager?: Pick<ShortTermGoalManager, 'update'>
+  memory?: AgentMemory
 }
 
 export type BrainCycleResult =
@@ -89,6 +95,7 @@ export class AutonomousAgentLoop {
   ) => DecisionValidationResult
   private readonly logger: AgentLoopLogger
   private readonly goalManager: Pick<ShortTermGoalManager, 'update'>
+  private readonly memory: AgentMemory | null
 
   private running = false
   private cycleInProgress = false
@@ -111,6 +118,7 @@ export class AutonomousAgentLoop {
     this.validate = options.validate ?? validateDecision
     this.logger = options.logger ?? console
     this.goalManager = options.goalManager ?? new ShortTermGoalManager()
+    this.memory = options.memory ?? null
   }
 
   start(): void {
@@ -158,7 +166,7 @@ export class AutonomousAgentLoop {
       }
 
       const goalSnapshot = this.goalManager.update(perception)
-      const input: BrainInput = {
+      const inputWithoutMemory: Omit<BrainInput, 'memory'> = {
         perception,
         state: {
           agentName: this.state.agentName,
@@ -174,6 +182,8 @@ export class AutonomousAgentLoop {
         goalProgress: goalSnapshot.goalProgress,
         availableCapabilities: goalSnapshot.availableCapabilities
       }
+      const memory = await this.retrieveMemory(inputWithoutMemory)
+      const input: BrainInput = { ...inputWithoutMemory, memory }
 
       if (goalSnapshot.transition?.completedGoal) {
         this.logger.log(
@@ -258,6 +268,13 @@ export class AutonomousAgentLoop {
         }
         this.previousActionResult = result
         this.logger.error(`❌ Result: ${result.summary}`)
+        await this.recordMemory({
+          before: perception,
+          after: this.observeAfterExecution(perception),
+          decision,
+          result,
+          goalTransition: goalSnapshot.transition
+        })
         return { status: 'execution_failed', result }
       }
 
@@ -269,10 +286,55 @@ export class AutonomousAgentLoop {
       this.logger[result.success ? 'log' : 'error'](
         `${result.success ? '✅' : '❌'} Result: ${result.summary}`
       )
+      await this.recordMemory({
+        before: perception,
+        after: this.observeAfterExecution(perception),
+        decision,
+        result,
+        goalTransition: goalSnapshot.transition
+      })
 
       return { status: 'executed', decision, result }
     } finally {
       this.cycleInProgress = false
+    }
+  }
+
+  private async retrieveMemory(
+    input: Omit<BrainInput, 'memory'>
+  ): Promise<BrainInput['memory']> {
+    if (!this.memory) return EMPTY_MEMORY_CONTEXT
+    try {
+      const retrieved = await this.memory.retrieve(input)
+      if (retrieved.error) {
+        this.logger.error(`❌ Memory retrieval failed: ${retrieved.error}`)
+      }
+      return retrieved.context
+    } catch {
+      this.logger.error('❌ Memory retrieval failed.')
+      return EMPTY_MEMORY_CONTEXT
+    }
+  }
+
+  private async recordMemory(event: MemoryCycleEvent): Promise<void> {
+    if (!this.memory) return
+    try {
+      const recorded = await this.memory.record(event)
+      if (recorded.error) {
+        this.logger.error(`❌ Memory persistence failed: ${recorded.error}`)
+      }
+    } catch {
+      this.logger.error('❌ Memory persistence failed.')
+    }
+  }
+
+  private observeAfterExecution(fallback: PerceptionSnapshot): PerceptionSnapshot {
+    if (!this.memory) return fallback
+    try {
+      return this.observe(this.bot)
+    } catch {
+      this.logger.error('❌ Post-action memory observation failed.')
+      return fallback
     }
   }
 

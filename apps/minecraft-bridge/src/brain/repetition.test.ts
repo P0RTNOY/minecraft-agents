@@ -52,7 +52,8 @@ const baseInput: BrainInput = {
     craftableItems: [],
     placeableBlocks: [],
     canExplore: true
-  }
+  },
+  memory: { recentEpisodes: [], relevantFacts: [] }
 }
 
 describe('assessRepetition', () => {

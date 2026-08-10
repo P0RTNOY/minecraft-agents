@@ -17,7 +17,15 @@ describe('loadBrainConfig', () => {
       groqApiKey: '',
       openaiBaseUrl: 'https://api.openai.com/v1',
       openaiApiKey: '',
-      debugTiming: false
+      debugTiming: false,
+      memoryEnabled: true,
+      memoryWorldId: 'local-paper',
+      memoryDirectory: 'data/memory',
+      memoryEpisodeLimit: 4,
+      memoryFactLimit: 4,
+      debugMemory: false,
+      memoryReflection: false,
+      memoryReflectionModel: 'gpt-5-mini'
     })
   })
 
@@ -34,7 +42,15 @@ describe('loadBrainConfig', () => {
       GROQ_API_KEY: 'test-api-key',
       OPENAI_BASE_URL: 'https://openai.example/v1/',
       OPENAI_API_KEY: 'test-openai-key',
-      LLM_DEBUG_TIMING: 'true'
+      LLM_DEBUG_TIMING: 'true',
+      AGENT_MEMORY_ENABLED: 'false',
+      AGENT_MEMORY_WORLD_ID: 'benchmark-world',
+      AGENT_MEMORY_DIR: '/tmp/minecraft-agent-memory',
+      AGENT_MEMORY_EPISODE_LIMIT: '6',
+      AGENT_MEMORY_FACT_LIMIT: '1',
+      AGENT_DEBUG_MEMORY: 'true',
+      AGENT_MEMORY_REFLECTION: 'true',
+      AGENT_MEMORY_REFLECTION_MODEL: 'gpt-5-mini-test'
     }), {
       autonomous: true,
       tickIntervalMs: 8000,
@@ -47,7 +63,15 @@ describe('loadBrainConfig', () => {
       groqApiKey: 'test-api-key',
       openaiBaseUrl: 'https://openai.example/v1/',
       openaiApiKey: 'test-openai-key',
-      debugTiming: true
+      debugTiming: true,
+      memoryEnabled: false,
+      memoryWorldId: 'benchmark-world',
+      memoryDirectory: '/tmp/minecraft-agent-memory',
+      memoryEpisodeLimit: 6,
+      memoryFactLimit: 1,
+      debugMemory: true,
+      memoryReflection: true,
+      memoryReflectionModel: 'gpt-5-mini-test'
     })
   })
 
@@ -81,6 +105,26 @@ describe('loadBrainConfig', () => {
       /LLM_DEBUG_TIMING must be either true or false/
     )
     assert.throws(
+      () => loadBrainConfig({ AGENT_MEMORY_EPISODE_LIMIT: '0' }),
+      /AGENT_MEMORY_EPISODE_LIMIT must be at least 1/
+    )
+    assert.throws(
+      () => loadBrainConfig({ AGENT_MEMORY_FACT_LIMIT: '7' }),
+      /AGENT_MEMORY_FACT_LIMIT must be at most 6/
+    )
+    assert.throws(
+      () => loadBrainConfig({ AGENT_MEMORY_WORLD_ID: '../other-world' }),
+      /AGENT_MEMORY_WORLD_ID is invalid/
+    )
+    assert.throws(
+      () => loadBrainConfig({ AGENT_MEMORY_DIR: 'bad\u0000path' }),
+      /AGENT_MEMORY_DIR is invalid/
+    )
+    assert.throws(
+      () => loadBrainConfig({ AGENT_DEBUG_MEMORY: 'yes' }),
+      /AGENT_DEBUG_MEMORY must be either true or false/
+    )
+    assert.throws(
       () => loadBrainConfig({
         AGENT_AUTONOMOUS: 'true',
         LLM_PROVIDER: 'groq',
@@ -95,6 +139,28 @@ describe('loadBrainConfig', () => {
         LLM_MODEL: 'gpt-5-mini'
       }),
       /OPENAI_API_KEY is required/
+    )
+    assert.throws(
+      () => loadBrainConfig({
+        AGENT_MEMORY_REFLECTION: 'true',
+        AGENT_MEMORY_REFLECTION_MODEL: '   ',
+        OPENAI_API_KEY: 'test-key'
+      }),
+      /AGENT_MEMORY_REFLECTION_MODEL is required/
+    )
+    assert.throws(
+      () => loadBrainConfig({
+        AGENT_MEMORY_REFLECTION: 'true',
+        AGENT_MEMORY_REFLECTION_MODEL: '../unsafe-model',
+        OPENAI_API_KEY: 'test-key'
+      }),
+      /AGENT_MEMORY_REFLECTION_MODEL is invalid/
+    )
+    assert.throws(
+      () => loadBrainConfig({
+        AGENT_MEMORY_REFLECTION: 'true'
+      }),
+      /OPENAI_API_KEY is required when memory reflection is enabled/
     )
   })
 })

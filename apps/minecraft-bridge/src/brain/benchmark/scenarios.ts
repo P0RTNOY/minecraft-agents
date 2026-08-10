@@ -142,7 +142,8 @@ function scenario(
       recentDecisions: [],
       shortTermGoal: goalSnapshot.shortTermGoal,
       goalProgress: goalSnapshot.goalProgress,
-      availableCapabilities: goalSnapshot.availableCapabilities
+      availableCapabilities: goalSnapshot.availableCapabilities,
+      memory: { recentEpisodes: [], relevantFacts: [] }
     } satisfies BrainInput
   }
 }

@@ -45,7 +45,8 @@ export function createBootstrapBrainInput(): BrainInput {
     recentDecisions: [],
     shortTermGoal: snapshot.shortTermGoal,
     goalProgress: snapshot.goalProgress,
-    availableCapabilities: snapshot.availableCapabilities
+    availableCapabilities: snapshot.availableCapabilities,
+    memory: { recentEpisodes: [], relevantFacts: [] }
   }
 }
 

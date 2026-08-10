@@ -11,6 +11,14 @@ export interface BrainConfig {
   openaiBaseUrl: string
   openaiApiKey: string
   debugTiming: boolean
+  memoryEnabled: boolean
+  memoryWorldId: string
+  memoryDirectory: string
+  memoryEpisodeLimit: number
+  memoryFactLimit: number
+  debugMemory: boolean
+  memoryReflection: boolean
+  memoryReflectionModel: string
 }
 
 type Environment = Readonly<Record<string, string | undefined>>
@@ -24,6 +32,11 @@ const MAX_REFLEX_INTERVAL_MS = 500
 const DEFAULT_EXPLORATION_RADIUS = 24
 const MIN_EXPLORATION_RADIUS = 8
 const MAX_EXPLORATION_RADIUS = 32
+const DEFAULT_MEMORY_LIMIT = 4
+const MIN_MEMORY_LIMIT = 1
+const MAX_MEMORY_LIMIT = 6
+const MEMORY_IDENTITY = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/
+const MEMORY_MODEL = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/
 
 export function loadBrainConfig(
   environment: Environment = process.env
@@ -59,10 +72,69 @@ export function loadBrainConfig(
     'LLM_DEBUG_TIMING',
     false
   )
+  const memoryEnabled = parseBoolean(
+    environment.AGENT_MEMORY_ENABLED,
+    'AGENT_MEMORY_ENABLED',
+    true
+  )
+  const memoryWorldId = environment.AGENT_MEMORY_WORLD_ID?.trim() ||
+    'local-paper'
+  const memoryDirectory = environment.AGENT_MEMORY_DIR?.trim() || 'data/memory'
+  const memoryEpisodeLimit = parseInterval(
+    environment.AGENT_MEMORY_EPISODE_LIMIT,
+    'AGENT_MEMORY_EPISODE_LIMIT',
+    DEFAULT_MEMORY_LIMIT,
+    MIN_MEMORY_LIMIT,
+    MAX_MEMORY_LIMIT
+  )
+  const memoryFactLimit = parseInterval(
+    environment.AGENT_MEMORY_FACT_LIMIT,
+    'AGENT_MEMORY_FACT_LIMIT',
+    DEFAULT_MEMORY_LIMIT,
+    MIN_MEMORY_LIMIT,
+    MAX_MEMORY_LIMIT
+  )
+  const debugMemory = parseBoolean(
+    environment.AGENT_DEBUG_MEMORY,
+    'AGENT_DEBUG_MEMORY',
+    false
+  )
+  const memoryReflection = parseBoolean(
+    environment.AGENT_MEMORY_REFLECTION,
+    'AGENT_MEMORY_REFLECTION',
+    false
+  )
+  const memoryReflectionModel = environment.AGENT_MEMORY_REFLECTION_MODEL === undefined
+    ? 'gpt-5-mini'
+    : environment.AGENT_MEMORY_REFLECTION_MODEL.trim()
   const model = environment.LLM_MODEL?.trim() ?? ''
   const provider = environment.LLM_PROVIDER?.trim().toLowerCase() || 'ollama'
   const groqApiKey = environment.GROQ_API_KEY?.trim() ?? ''
   const openaiApiKey = environment.OPENAI_API_KEY?.trim() ?? ''
+
+  if (!MEMORY_IDENTITY.test(memoryWorldId)) {
+    throw new Error('AGENT_MEMORY_WORLD_ID is invalid.')
+  }
+  if (
+    memoryDirectory.length === 0 ||
+    memoryDirectory.length > 512 ||
+    /[\u0000-\u001F\u007F]/.test(memoryDirectory)
+  ) {
+    throw new Error('AGENT_MEMORY_DIR is invalid.')
+  }
+  if (memoryReflection && memoryReflectionModel.length === 0) {
+    throw new Error(
+      'AGENT_MEMORY_REFLECTION_MODEL is required when memory reflection is enabled.'
+    )
+  }
+  if (memoryReflection && !MEMORY_MODEL.test(memoryReflectionModel)) {
+    throw new Error('AGENT_MEMORY_REFLECTION_MODEL is invalid.')
+  }
+  if (memoryReflection && openaiApiKey.length === 0) {
+    throw new Error(
+      'OPENAI_API_KEY is required when memory reflection is enabled.'
+    )
+  }
 
   if (autonomous && model.length === 0) {
     throw new Error('LLM_MODEL is required when AGENT_AUTONOMOUS=true.')
@@ -93,7 +165,15 @@ export function loadBrainConfig(
     openaiBaseUrl: environment.OPENAI_BASE_URL?.trim() ||
       'https://api.openai.com/v1',
     openaiApiKey,
-    debugTiming
+    debugTiming,
+    memoryEnabled,
+    memoryWorldId,
+    memoryDirectory,
+    memoryEpisodeLimit,
+    memoryFactLimit,
+    debugMemory,
+    memoryReflection,
+    memoryReflectionModel
   }
 }
 

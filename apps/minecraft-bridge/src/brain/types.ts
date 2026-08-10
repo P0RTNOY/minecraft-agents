@@ -4,6 +4,7 @@ import type {
   AgentStatus
 } from '../agent/state.js'
 import type { PerceptionSnapshot } from '../perception/types.js'
+import type { MemoryContext } from '../memory/types.js'
 import type {
   AvailableCapabilities,
   GoalProgress,
@@ -59,4 +60,5 @@ export interface BrainInput {
   shortTermGoal: ShortTermGoal | null
   goalProgress: GoalProgress | null
   availableCapabilities: AvailableCapabilities
+  memory: MemoryContext
 }
