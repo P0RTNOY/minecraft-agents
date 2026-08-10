@@ -24,6 +24,8 @@ import {
 } from '../brain/validateDecision.js'
 import { perceive } from '../perception/perceive.js'
 import type { PerceptionSnapshot } from '../perception/types.js'
+import type { VisibleAgentSocialContext } from '../social/context.js'
+import type { CognitiveGate } from '../social/cognitiveGate.js'
 import type {
   AgentMemory,
   MemoryCycleEvent
@@ -54,6 +56,10 @@ export interface AgentLoopOptions {
   logger?: AgentLoopLogger
   goalManager?: Pick<ShortTermGoalManager, 'update'>
   memory?: AgentMemory
+  cognitiveGate?: CognitiveGate
+  socialContext?: (
+    perception: PerceptionSnapshot
+  ) => Promise<readonly VisibleAgentSocialContext[]>
 }
 
 export type BrainCycleResult =
@@ -71,6 +77,9 @@ export type BrainCycleResult =
         | 'action_in_progress'
         | 'priority_override'
         | 'loop_stopped'
+        | 'social_session'
+        | 'cognitive_busy'
+        | 'stale_cognition'
     }
   | { status: 'validation_failed'; issues: string[] }
   | {
@@ -97,6 +106,8 @@ export class AutonomousAgentLoop {
   private readonly logger: AgentLoopLogger
   private readonly goalManager: Pick<ShortTermGoalManager, 'update'>
   private readonly memory: AgentMemory | null
+  private readonly cognitiveGate: CognitiveGate | null
+  private readonly socialContext: AgentLoopOptions['socialContext'] | null
 
   private running = false
   private cycleInProgress = false
@@ -122,6 +133,8 @@ export class AutonomousAgentLoop {
     this.logger = options.logger ?? console
     this.goalManager = options.goalManager ?? new ShortTermGoalManager()
     this.memory = options.memory ?? null
+    this.cognitiveGate = options.cognitiveGate ?? null
+    this.socialContext = options.socialContext ?? null
   }
 
   start(): void {
@@ -198,7 +211,15 @@ export class AutonomousAgentLoop {
       if (lifecycleGeneration !== this.lifecycleGeneration) {
         return { status: 'skipped', reason: 'loop_stopped' }
       }
-      const input: BrainInput = { ...inputWithoutMemory, memory }
+      const socialContext = await this.retrieveSocialContext(perception)
+      if (lifecycleGeneration !== this.lifecycleGeneration) {
+        return { status: 'skipped', reason: 'loop_stopped' }
+      }
+      const input: BrainInput = {
+        ...inputWithoutMemory,
+        memory,
+        ...(socialContext ? { socialContext } : {})
+      }
 
       if (goalSnapshot.transition?.completedGoal) {
         this.logger.log(
@@ -218,7 +239,27 @@ export class AutonomousAgentLoop {
 
       let providerOutput: unknown
       try {
-        providerOutput = await this.provider.decide(input)
+        if (this.cognitiveGate) {
+          const cognition = await this.cognitiveGate.runBrain(
+            () => this.provider.decide(input)
+          )
+          if (cognition.status === 'stale') {
+            return { status: 'skipped', reason: 'stale_cognition' }
+          }
+          if (cognition.status === 'suppressed') {
+            return {
+              status: 'skipped',
+              reason: cognition.reason === 'social_session'
+                ? 'social_session'
+                : cognition.reason === 'stopped'
+                  ? 'loop_stopped'
+                  : 'cognitive_busy'
+            }
+          }
+          providerOutput = cognition.value
+        } else {
+          providerOutput = await this.provider.decide(input)
+        }
       } catch (error) {
         const message = formatError(error)
         this.logger.error(`❌ Provider failure: ${message}`)
@@ -332,6 +373,18 @@ export class AutonomousAgentLoop {
     } catch {
       this.logger.error('❌ Memory retrieval failed.')
       return EMPTY_MEMORY_CONTEXT
+    }
+  }
+
+  private async retrieveSocialContext(
+    perception: PerceptionSnapshot
+  ): Promise<readonly VisibleAgentSocialContext[] | null> {
+    if (!this.socialContext) return null
+    try {
+      return [...await this.socialContext(perception)].slice(0, 8)
+    } catch {
+      this.logger.error('❌ Social context retrieval failed.')
+      return []
     }
   }
 

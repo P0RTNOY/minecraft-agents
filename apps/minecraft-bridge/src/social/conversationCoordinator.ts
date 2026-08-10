@@ -25,6 +25,7 @@ export interface ConversationParticipant {
   ): Promise<unknown>
   emitSocialMessage(message: string, generation: number): boolean
   recordSocialEvent(event: SocialEvent): Promise<void>
+  recordConversationTelemetry?(event: ConversationTelemetryEvent): void
   endSocialSession(conversationId: string): void
 }
 
@@ -65,6 +66,12 @@ export type ConversationTelemetryEvent =
       type: 'terminal'
       conversationId: string
       outcome: ConversationTerminalOutcome
+      turns: number
+      providerCalls: number
+    }
+  | {
+      type: 'budget_exhausted'
+      conversationId: string
       turns: number
       providerCalls: number
     }
@@ -198,6 +205,17 @@ export class ConversationCoordinator {
     this.participants.set(participant.agentId, participant)
   }
 
+  async unregisterParticipant(agentId: string): Promise<void> {
+    const participant = this.participants.get(agentId)
+    if (!participant) return
+    const conversationId = this.sessionByAgent.get(agentId)
+    const session = conversationId
+      ? this.sessions.get(conversationId)
+      : undefined
+    if (session) await this.finish(session, 'shutdown')
+    this.participants.delete(agentId)
+  }
+
   async startConversation(
     initiatorAgentId: string,
     targetAgentId: string,
@@ -269,7 +287,7 @@ export class ConversationCoordinator {
       initiatorAgentId,
       targetAgentId,
       trigger
-    })
+    }, session.participants)
     const worker = this.runSession(session)
       .catch(async () => {
         this.logger.error('Conversation coordinator worker failed.')
@@ -378,6 +396,12 @@ export class ConversationCoordinator {
 
     while (this.isActive(session)) {
       if (session.turns >= this.maxTurns || session.providerCalls >= this.maxTurns) {
+        this.telemetry({
+          type: 'budget_exhausted',
+          conversationId: session.conversationId,
+          turns: session.turns,
+          providerCalls: session.providerCalls
+        }, session.participants)
         await this.finish(session, 'completed')
         return
       }
@@ -457,7 +481,7 @@ export class ConversationCoordinator {
         speakerAgentId: speaker.agentId,
         turn: session.turns,
         providerCalls: session.providerCalls
-      })
+      }, [speaker])
 
       const recorded = await this.recordSpeech(
         session,
@@ -476,6 +500,17 @@ export class ConversationCoordinator {
         session.turns >= this.maxTurns ||
         session.providerCalls >= this.maxTurns
       ) {
+        if (
+          session.turns >= this.maxTurns ||
+          session.providerCalls >= this.maxTurns
+        ) {
+          this.telemetry({
+            type: 'budget_exhausted',
+            conversationId: session.conversationId,
+            turns: session.turns,
+            providerCalls: session.providerCalls
+          }, session.participants)
+        }
         await this.finish(session, 'completed')
         return
       }
@@ -539,7 +574,7 @@ export class ConversationCoordinator {
       outcome,
       turns: session.turns,
       providerCalls: session.providerCalls
-    })
+    }, session.participants)
     await this.recordLifecycle(
       session,
       outcome === 'completed'
@@ -649,12 +684,18 @@ export class ConversationCoordinator {
       type: 'stale_response',
       conversationId: session.conversationId,
       speakerAgentId
-    })
+    }, [this.participant(session, speakerAgentId)])
   }
 
-  private telemetry(event: ConversationTelemetryEvent): void {
+  private telemetry(
+    event: ConversationTelemetryEvent,
+    participants: readonly ConversationParticipant[] = []
+  ): void {
     try {
       this.onTelemetry?.(event)
+      for (const participant of participants) {
+        participant.recordConversationTelemetry?.(event)
+      }
     } catch {
       this.logger.error('Conversation telemetry callback failed.')
     }

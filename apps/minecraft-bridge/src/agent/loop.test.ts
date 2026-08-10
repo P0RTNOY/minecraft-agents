@@ -10,6 +10,7 @@ import {
 import { ActionArbiter } from './actionArbiter.js'
 import type { AgentDecision, BrainInput } from '../brain/types.js'
 import type { LLMProvider } from '../brain/provider.js'
+import { CognitiveGate } from '../social/cognitiveGate.js'
 import {
   AutonomousAgentLoop,
   type AgentLoopOptions
@@ -22,6 +23,87 @@ import type {
 const fakeBot = {} as Bot
 
 describe('AutonomousAgentLoop', () => {
+  it('suppresses deliberate Brain calls while a social session is active', async () => {
+    const gate = new CognitiveGate()
+    let providerCalls = 0
+    gate.beginSocialSession('conversation-1')
+    const loop = createLoop({
+      cognitiveGate: gate,
+      provider: {
+        decide: async () => {
+          providerCalls += 1
+          return { action: 'idle', reason: 'Wait.' }
+        }
+      }
+    })
+
+    assert.deepEqual(await loop.runCycle(), {
+      status: 'skipped',
+      reason: 'social_session'
+    })
+    assert.equal(providerCalls, 0)
+  })
+
+  it('discards a Brain result invalidated by a starting social session', async () => {
+    const gate = new CognitiveGate()
+    const decision = deferred<unknown>()
+    const providerStarted = deferred<void>()
+    let executions = 0
+    const loop = createLoop({
+      cognitiveGate: gate,
+      provider: {
+        decide: async () => {
+          providerStarted.resolve()
+          return decision.promise
+        }
+      },
+      execute: async () => {
+        executions += 1
+        return successfulIdleResult()
+      }
+    })
+    const cycle = loop.runCycle()
+    await providerStarted.promise
+
+    gate.beginSocialSession('conversation-1')
+    decision.resolve({ action: 'idle', reason: 'Wait.' })
+
+    assert.deepEqual(await cycle, {
+      status: 'skipped',
+      reason: 'stale_cognition'
+    })
+    assert.equal(executions, 0)
+  })
+
+  it('adds bounded application-owned social context to the Brain input', async () => {
+    const inputs: BrainInput[] = []
+    const loop = createLoop({
+      socialContext: async () => [{
+        agentId: 'bob',
+        username: 'Bob',
+        relationship: {
+          familiarity: 'familiar',
+          trust: 'neutral',
+          affinity: 'neutral',
+          reciprocity: 'neutral',
+          interactionCount: 1
+        },
+        lastVerifiedInteraction: 'conversation_completed',
+        recentUnverifiedUtterance: null
+      }],
+      provider: {
+        decide: async input => {
+          inputs.push(input)
+          return { action: 'idle', reason: 'Wait.' }
+        }
+      }
+    })
+
+    await loop.runCycle()
+
+    assert.equal(inputs[0]?.socialContext?.[0]?.agentId, 'bob')
+  })
+
   it('retrieves memory before provider input and records after execution', async () => {
     const order: string[] = []
     const recorded: MemoryCycleEvent[] = []

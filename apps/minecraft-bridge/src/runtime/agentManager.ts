@@ -15,6 +15,7 @@ export interface ManagedAgentRuntime {
 export interface AgentManagerOptions {
   definitions: readonly AgentDefinition[]
   createRuntime(definition: AgentDefinition, index: number): ManagedAgentRuntime
+  prepareSharedStop?: () => void | Promise<void>
   closeShared?: () => void | Promise<void>
 }
 
@@ -38,6 +39,7 @@ export class AgentManager {
   private readonly definitions: readonly AgentDefinition[]
   private readonly createRuntime: AgentManagerOptions['createRuntime']
   private readonly closeShared: () => void | Promise<void>
+  private readonly prepareSharedStop: () => void | Promise<void>
   private readonly running: ManagedAgentRuntime[] = []
   private startPromise: Promise<AgentStartupSummary> | null = null
   private stopPromise: Promise<AgentShutdownSummary> | null = null
@@ -50,6 +52,7 @@ export class AgentManager {
       agents: options.definitions
     }).agents
     this.createRuntime = options.createRuntime
+    this.prepareSharedStop = options.prepareSharedStop ?? (() => {})
     this.closeShared = options.closeShared ?? (() => {})
   }
 
@@ -61,11 +64,13 @@ export class AgentManager {
   stopAll(): Promise<AgentShutdownSummary> {
     if (!this.stopPromise) {
       this.shutdownRequested = true
+      const preparedStop = captureOperation(this.prepareSharedStop)
       const startingRuntime = this.startingRuntime
       const startingStop = startingRuntime?.stop() ?? null
       this.stopPromise = this.stopInReverseOrder(
         startingRuntime,
-        startingStop
+        startingStop,
+        preparedStop
       )
     }
     return this.stopPromise
@@ -100,10 +105,20 @@ export class AgentManager {
 
   private async stopInReverseOrder(
     startingRuntime: ManagedAgentRuntime | null,
-    startingStop: Promise<void> | null
+    startingStop: Promise<void> | null,
+    preparedStop: Promise<void>
   ): Promise<AgentShutdownSummary> {
     if (this.startPromise) await this.startPromise
     const summary: AgentShutdownSummary = { stopped: [], failures: [] }
+    try {
+      await preparedStop
+    } catch (error) {
+      summary.failures.push({
+        agentId: 'shared',
+        username: 'shared',
+        error: safeError(error)
+      })
+    }
     if (startingRuntime && startingStop) {
       try {
         await startingStop
@@ -135,6 +150,14 @@ export class AgentManager {
       })
     }
     return cloneShutdownSummary(summary)
+  }
+}
+
+function captureOperation(operation: () => void | Promise<void>): Promise<void> {
+  try {
+    return Promise.resolve(operation())
+  } catch (error) {
+    return Promise.reject(error)
   }
 }
 

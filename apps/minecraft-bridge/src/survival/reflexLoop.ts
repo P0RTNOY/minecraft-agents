@@ -27,6 +27,7 @@ export interface ReflexLoopOptions {
   evaluate?: (perception: PerceptionSnapshot) => SurvivalDecision | null
   execute?: SurvivalExecutor
   logger?: ReflexLoopLogger
+  onReflexDecision?: () => void
 }
 
 export type ReflexCycleResult =
@@ -58,6 +59,7 @@ export class ReflexLoop {
   ) => SurvivalDecision | null
   private readonly execute: SurvivalExecutor
   private readonly logger: ReflexLoopLogger
+  private readonly onReflexDecision: () => void
 
   private running = false
   private cycleInProgress = false
@@ -80,6 +82,7 @@ export class ReflexLoop {
     this.evaluate = options.evaluate ?? evaluateReflex
     this.execute = options.execute ?? executeSurvivalDecision
     this.logger = options.logger ?? console
+    this.onReflexDecision = options.onReflexDecision ?? (() => {})
   }
 
   start(): void {
@@ -134,6 +137,8 @@ export class ReflexLoop {
       if (!decision) {
         return { status: 'no_action' }
       }
+
+      this.onReflexDecision()
 
       this.logger.log(`⚡ Reflex: ${decision.reason}`)
       this.logger.log(`⚙️ Executing reflex: ${decision.action}`)

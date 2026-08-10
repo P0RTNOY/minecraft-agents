@@ -7,6 +7,9 @@ import type { BrainConfig } from '../brain/config.js'
 import type { LLMProvider } from '../brain/provider.js'
 import type { AgentMemory, MemoryMetrics } from '../memory/coordinator.js'
 import type { AgentDefinition } from './config.js'
+import { ConversationCoordinator } from '../social/conversationCoordinator.js'
+import type { SocialProvider } from '../social/provider.js'
+import { AgentRelationshipService } from '../social/relationships.js'
 import { AgentRuntime } from './agentRuntime.js'
 import type {
   AgentRuntimeServices,
@@ -14,6 +17,7 @@ import type {
   RuntimeScheduler,
   RuntimeTelemetry
 } from './services.js'
+import { createEmptySocialTelemetry } from './telemetry.js'
 
 describe('AgentRuntime', () => {
   it('owns independent state and arbitration for every agent', () => {
@@ -191,6 +195,28 @@ describe('AgentRuntime', () => {
     assert.equal(setup.events.includes('telemetry:flush'), true)
     assert.equal(setup.runtime.snapshot().phase, 'stopped')
   })
+
+  it('removes social observation before drains and flushes relationships before bot quit', async () => {
+    const brainIdleGate = deferred<void>()
+    const setup = harness(
+      { id: 'alice', username: 'Alice' },
+      0,
+      { socialEnabled: true, brainIdleGate: brainIdleGate.promise }
+    )
+    await setup.runtime.start()
+    assert.equal(setup.bot.listenerCount('physicsTick'), 1)
+    setup.events.length = 0
+
+    const stopping = setup.runtime.stop()
+    assert.equal(setup.bot.listenerCount('physicsTick'), 0)
+    brainIdleGate.resolve()
+    await stopping
+
+    assert.ok(
+      setup.events.indexOf('relationship:flush') <
+      setup.events.indexOf('bot:quit:agent runtime stopped')
+    )
+  })
 })
 
 function harness(
@@ -202,6 +228,7 @@ function harness(
     autoSpawn?: boolean
     brainIdleGate?: Promise<void>
     commandProbe?: boolean
+    socialEnabled?: boolean
   } = {}
 ) {
   const events: string[] = []
@@ -213,6 +240,32 @@ function harness(
   const telemetry = telemetryDouble(events, definition)
   const provider: LLMProvider = {
     decide: async () => ({ action: 'idle', reason: 'Wait.' })
+  }
+  const relationshipStore = {
+    open: async () => {},
+    flush: async () => { events.push('relationship:flush') },
+    get: async () => null,
+    list: async () => [],
+    put: async () => {}
+  }
+  const configuredAgents: AgentDefinition[] = definition.id === 'alice'
+    ? [definition, { id: 'bob', username: 'Bob' }]
+    : [{ id: 'alice', username: 'Alice' }, definition]
+  const coordinator = options.socialEnabled
+    ? new ConversationCoordinator({
+        enabled: true,
+        worldId: 'local-paper',
+        autoGreeting: false,
+        maxTurns: 2,
+        cooldownMs: 1_000,
+        turnTimeoutMs: 1_000,
+        maxMessageCharacters: 80
+      })
+    : undefined
+  const socialProvider: SocialProvider = {
+    generate: async () => ({
+      message: 'Hello.', intent: 'greet', continueConversation: false
+    })
   }
   const services: AgentRuntimeServices = {
     createMemory: async context => {
@@ -227,6 +280,24 @@ function harness(
         events.push('provider:abort')
       }, { once: true })
       return provider
+    },
+    createSocialResources: async context => {
+      events.push(`social:create:${context.identity.agentId}`)
+      return {
+        provider: socialProvider,
+        relationshipStore,
+        relationships: new AgentRelationshipService({
+          identity: {
+            observerAgentId: context.identity.agentId,
+            worldId: context.config.memoryWorldId
+          },
+          configuredTargetAgentIds: context.configuredAgentIds.filter(
+            agentId => agentId !== context.identity.agentId
+          ),
+          store: relationshipStore,
+          encounterCooldownMs: context.config.socialCooldownMs
+        })
+      }
     },
     createBot: connection => {
       events.push(`bot:create:${connection.username}`)
@@ -253,6 +324,21 @@ function harness(
       }
     },
     observeVisibleExternalPlayers: () => ['ExternalPlayer'],
+    observePerception: () => ({
+      agent: definition.username,
+      timestamp: 1,
+      position: { x: 0, y: 64, z: 0 },
+      health: 20,
+      food: 20,
+      nearbyBlocks: [],
+      nearbyEntities: [],
+      inventory: [],
+      edibleItemCount: 0,
+      craftableItems: [],
+      nearbyCraftingTable: false,
+      equippedItem: null,
+      placeableBlocks: []
+    }),
     cancelAction: () => events.push('action:cancel'),
     createTelemetry: () => telemetry,
     scheduler,
@@ -261,14 +347,18 @@ function harness(
   }
   const runtime = new AgentRuntime({
     definition,
-    brainConfig: brainConfig(),
+    brainConfig: {
+      ...brainConfig(),
+      socialEnabled: options.socialEnabled ?? false
+    },
     minecraft: {
       host: 'localhost',
       port: 25_565,
       spawnTimeoutMs: 30_000
     },
     brainStartDelayMs,
-    services
+    services,
+    ...(coordinator ? { socialCoordinator: coordinator, configuredAgents } : {})
   })
   return { runtime, events, scheduler, brain, reflex, bot }
 }
@@ -348,6 +438,11 @@ function telemetryDouble(
 ): RuntimeTelemetry {
   return {
     recordProviderCall() {},
+    recordSocialProviderCall() {},
+    recordConversationTelemetry() {},
+    recordSocialEvent() {},
+    recordSocialLoopRejection() {},
+    recordSocialBudgetExhaustion() {},
     recordSpawn() {},
     recordDisconnect: () => { events.push('telemetry:disconnect') },
     recordError() {},
@@ -367,7 +462,8 @@ function telemetryDouble(
       disconnects: 0,
       errors: 0,
       kicked: 0,
-      memory: null
+      memory: null,
+      social: createEmptySocialTelemetry()
     })
   }
 }

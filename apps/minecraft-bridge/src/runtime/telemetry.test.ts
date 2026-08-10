@@ -3,14 +3,100 @@ import { describe, it } from 'node:test'
 
 import { createBootstrapBrainInput } from '../brain/benchmark/bootstrap.js'
 import type { LLMProvider } from '../brain/provider.js'
+import type { SocialProvider } from '../social/provider.js'
 import { ProviderConcurrencyLimiter } from './providerLimiter.js'
 import {
   AgentRuntimeTelemetry,
+  createEmptySocialTelemetry,
   instrumentAgentProvider,
+  instrumentSocialProvider,
   summarizeAgentTelemetry
 } from './telemetry.js'
 
 describe('AgentRuntimeTelemetry', () => {
+  it('records privacy-safe social counters without transcript content', () => {
+    const telemetry = new AgentRuntimeTelemetry({
+      agentId: 'alice', username: 'Alice'
+    })
+    telemetry.recordSocialProviderCall({
+      succeeded: true,
+      providerLatencyMs: 18,
+      queueWaitMs: 2,
+      timing: { promptTokens: 20, outputTokens: 4 }
+    })
+    telemetry.recordConversationTelemetry({
+      type: 'started',
+      conversationId: 'conversation-1',
+      initiatorAgentId: 'alice',
+      targetAgentId: 'bob',
+      trigger: 'operator'
+    })
+    telemetry.recordConversationTelemetry({
+      type: 'turn_completed',
+      conversationId: 'conversation-1',
+      speakerAgentId: 'alice',
+      turn: 1,
+      providerCalls: 1
+    })
+    telemetry.recordConversationTelemetry({
+      type: 'terminal',
+      conversationId: 'conversation-1',
+      outcome: 'completed',
+      turns: 1,
+      providerCalls: 1
+    })
+    telemetry.recordSocialEvent('conversation_completed', true, 1)
+
+    const encoded = JSON.stringify(telemetry.snapshot())
+    assert.equal(encoded.includes('message'), false)
+    assert.deepEqual(telemetry.snapshot().social, {
+      providerCalls: 1,
+      providerFailures: 0,
+      inputTokens: 20,
+      outputTokens: 4,
+      providerLatenciesMs: [18],
+      providerQueueWaitMs: [2],
+      conversationsStarted: 1,
+      conversationsCompleted: 1,
+      conversationsTimedOut: 0,
+      conversationsInterrupted: 0,
+      turnsCompleted: 1,
+      invalidOutputs: 0,
+      budgetExhaustions: 0,
+      loopRejections: 0,
+      staleResponses: 0,
+      relationshipUpdates: {
+        agentSeen: 0,
+        conversationCompleted: 1
+      },
+      episodesCreated: 1
+    })
+  })
+
+  it('instruments social generation through the shared limiter', async () => {
+    const limiter = new ProviderConcurrencyLimiter(1)
+    const telemetry = new AgentRuntimeTelemetry({
+      agentId: 'alice', username: 'Alice'
+    })
+    const social: SocialProvider = {
+      generate: async () => ({
+        message: 'Hello.', intent: 'greet', continueConversation: false
+      }),
+      getLastTiming: () => ({ promptTokens: 12, outputTokens: 3 })
+    }
+    const provider = instrumentSocialProvider(
+      social,
+      limiter,
+      telemetry,
+      new AbortController().signal
+    )
+
+    await provider.generate({} as never)
+
+    assert.equal(telemetry.snapshot().social.providerCalls, 1)
+    assert.equal(telemetry.snapshot().social.inputTokens, 12)
+  })
+
   it('records immutable provider metrics under one agent identity', () => {
     const telemetry = new AgentRuntimeTelemetry({
       agentId: 'alice',
@@ -46,7 +132,8 @@ describe('AgentRuntimeTelemetry', () => {
       disconnects: 0,
       errors: 0,
       kicked: 0,
-      memory: null
+      memory: null,
+      social: createEmptySocialTelemetry()
     })
   })
 

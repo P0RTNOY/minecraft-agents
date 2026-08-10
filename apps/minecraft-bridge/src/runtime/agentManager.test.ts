@@ -6,6 +6,7 @@ import {
   AgentManager,
   type ManagedAgentRuntime
 } from './agentManager.js'
+import { createEmptySocialTelemetry } from './telemetry.js'
 
 describe('AgentManager', () => {
   it('continues Alice and Charlie when Bob startup fails', async () => {
@@ -78,6 +79,42 @@ describe('AgentManager', () => {
     })
     assert.deepEqual(stopOrder, ['bob', 'alice'])
     assert.equal(sharedStops, 1)
+  })
+
+  it('prepares shared services once before any runtime begins stopping', async () => {
+    const events: string[] = []
+    const manager = new AgentManager({
+      definitions: definitions().slice(0, 2),
+      createRuntime: definition => runtimeDouble(definition, events),
+      prepareSharedStop: () => { events.push('shared:prepare') },
+      closeShared: () => { events.push('shared:close') }
+    })
+    await manager.startAll()
+
+    await Promise.all([manager.stopAll(), manager.stopAll()])
+
+    assert.deepEqual(events, [
+      'shared:prepare',
+      'bob',
+      'alice',
+      'shared:close'
+    ])
+  })
+
+  it('reports prepare-stop failure while still draining runtimes and shared close', async () => {
+    const events: string[] = []
+    const manager = new AgentManager({
+      definitions: definitions().slice(0, 1),
+      createRuntime: definition => runtimeDouble(definition, events),
+      prepareSharedStop: () => { throw new Error('prepare failed') },
+      closeShared: () => { events.push('shared:close') }
+    })
+    await manager.startAll()
+
+    const result = await manager.stopAll()
+
+    assert.deepEqual(events, ['alice', 'shared:close'])
+    assert.equal(result.failures[0]?.error, 'prepare failed')
   })
 
   it('rejects duplicate identities before constructing any runtime', () => {
@@ -174,7 +211,8 @@ function runtimeDouble(
         disconnects: 0,
         errors: 0,
         kicked: 0,
-        memory: null
+        memory: null,
+        social: createEmptySocialTelemetry()
       }
     })
   }

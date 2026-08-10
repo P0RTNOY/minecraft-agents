@@ -27,6 +27,7 @@ export type ChatCommand =
   | { type: 'scan' }
   | { type: 'inventory' }
   | { type: 'collect'; blockName: string }
+  | { type: 'talk'; targetAgentId: string }
 
 export interface ChatCommandLogger {
   log(message: string): void
@@ -37,6 +38,14 @@ export interface RegisterChatCommandOptions {
   arbiter?: ActionArbiter
   isAuthorizedOperator?: (username: string) => boolean
   logger?: ChatCommandLogger
+  startConversation?: (
+    targetAgentId: string
+  ) => Promise<{
+    accepted: boolean
+    reason?: string
+    conversationId?: string
+  }>
+  onManualActivity?: () => void
 }
 
 export function parseChatCommand(
@@ -61,6 +70,17 @@ export function parseChatCommand(
 
   if (command === `${commandPrefix} collect`) {
     return { type: 'collect', blockName: '' }
+  }
+
+  if (command === `${commandPrefix} talk`) {
+    return { type: 'talk', targetAgentId: '' }
+  }
+
+  const talkMatch = command.match(
+    new RegExp(`^${escapeRegExp(commandPrefix)} talk ([a-z][a-z0-9_-]{0,31})$`)
+  )
+  if (talkMatch?.[1]) {
+    return { type: 'talk', targetAgentId: talkMatch[1] }
   }
 
   const collectPrefix = `${commandPrefix} collect `
@@ -93,6 +113,12 @@ export function registerChatCommands(
     logger.log(`💬 ${username}: ${message}`)
 
     markManualOverride(state)
+    options.onManualActivity?.()
+
+    if (command.type === 'talk') {
+      void executeTalkCommand(bot, command, options.startConversation, logger)
+      return
+    }
 
     void arbiter.run({
       source: 'manual',
@@ -114,6 +140,32 @@ export function registerChatCommands(
   }
   bot.on('chat', onChat)
   return () => bot.off('chat', onChat)
+}
+
+async function executeTalkCommand(
+  bot: Bot,
+  command: Extract<ChatCommand, { type: 'talk' }>,
+  startConversation: RegisterChatCommandOptions['startConversation'],
+  logger: ChatCommandLogger
+): Promise<void> {
+  if (!command.targetAgentId) {
+    bot.chat('Tell me which configured agent to talk to.')
+    return
+  }
+  if (!startConversation) {
+    bot.chat('Social conversations are disabled.')
+    return
+  }
+  try {
+    const result = await startConversation(command.targetAgentId)
+    if (!result.accepted) {
+      logger.log(`ℹ️ Conversation request rejected: ${result.reason ?? 'unavailable'}`)
+      bot.chat(`I can't talk to ${command.targetAgentId} right now.`)
+    }
+  } catch (error) {
+    logger.error(`❌ Conversation request failed: ${safeError(error)}`)
+    bot.chat(`I can't talk to ${command.targetAgentId} right now.`)
+  }
 }
 
 export function createOperatorAuthorizer(
@@ -208,6 +260,10 @@ async function executeChatCommand(
         await collectBlock(bot, state, command.blockName),
         logger
       )
+      return
+
+    case 'talk':
+      return
   }
 }
 
@@ -256,4 +312,8 @@ function normalizedNames(values: readonly string[]): Set<string> {
 
 function safeError(error: unknown): string {
   return error instanceof Error ? error.message.slice(0, 200) : 'Unknown error.'
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
