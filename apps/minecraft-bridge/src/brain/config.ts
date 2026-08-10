@@ -8,6 +8,8 @@ export interface BrainConfig {
   ollamaBaseUrl: string
   groqBaseUrl: string
   groqApiKey: string
+  openaiBaseUrl: string
+  openaiApiKey: string
   debugTiming: boolean
 }
 
@@ -60,6 +62,7 @@ export function loadBrainConfig(
   const model = environment.LLM_MODEL?.trim() ?? ''
   const provider = environment.LLM_PROVIDER?.trim().toLowerCase() || 'ollama'
   const groqApiKey = environment.GROQ_API_KEY?.trim() ?? ''
+  const openaiApiKey = environment.OPENAI_API_KEY?.trim() ?? ''
 
   if (autonomous && model.length === 0) {
     throw new Error('LLM_MODEL is required when AGENT_AUTONOMOUS=true.')
@@ -67,6 +70,12 @@ export function loadBrainConfig(
 
   if (autonomous && provider === 'groq' && groqApiKey.length === 0) {
     throw new Error('GROQ_API_KEY is required when Groq autonomy is enabled.')
+  }
+
+  if (autonomous && provider === 'openai' && openaiApiKey.length === 0) {
+    throw new Error(
+      'OPENAI_API_KEY is required when OpenAI autonomy is enabled.'
+    )
   }
 
   return {
@@ -81,6 +90,9 @@ export function loadBrainConfig(
     groqBaseUrl: environment.GROQ_BASE_URL?.trim() ||
       'https://api.groq.com/openai/v1',
     groqApiKey,
+    openaiBaseUrl: environment.OPENAI_BASE_URL?.trim() ||
+      'https://api.openai.com/v1',
+    openaiApiKey,
     debugTiming
   }
 }

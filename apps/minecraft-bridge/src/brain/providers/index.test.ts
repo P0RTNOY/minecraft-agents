@@ -5,6 +5,7 @@ import type { BrainConfig } from '../config.js'
 import { GroqProvider } from './groq.js'
 import { createLLMProvider } from './index.js'
 import { OllamaProvider } from './ollama.js'
+import { OpenAIProvider } from './openai.js'
 
 const config: BrainConfig = {
   autonomous: true,
@@ -16,6 +17,8 @@ const config: BrainConfig = {
   ollamaBaseUrl: 'http://127.0.0.1:11434',
   groqBaseUrl: 'https://api.groq.com/openai/v1',
   groqApiKey: 'test-api-key',
+  openaiBaseUrl: 'https://api.openai.com/v1',
+  openaiApiKey: 'test-openai-key',
   debugTiming: false
 }
 
@@ -27,6 +30,11 @@ describe('createLLMProvider', () => {
       provider: 'groq',
       model: 'openai/gpt-oss-20b'
     }) instanceof GroqProvider, true)
+    assert.equal(createLLMProvider({
+      ...config,
+      provider: 'openai',
+      model: 'gpt-5-mini'
+    }) instanceof OpenAIProvider, true)
   })
 
   it('rejects unsupported provider names explicitly', () => {
