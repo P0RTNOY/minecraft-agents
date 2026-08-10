@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "agents": [
+    {
+      "id": "alice",
+      "username": "Alice"
+    },
+    {
+      "id": "bob",
+      "username": "Bob"
+    },
+    {
+      "id": "charlie",
+      "username": "Charlie"
+    }
+  ]
+}
