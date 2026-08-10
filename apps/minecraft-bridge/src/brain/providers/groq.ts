@@ -3,7 +3,7 @@ import {
   serializeBrainInput,
   SYSTEM_INSTRUCTION
 } from '../decisionContract.js'
-import type { LLMProvider } from '../provider.js'
+import type { LLMProvider, LLMRequestTiming } from '../provider.js'
 import type { BrainInput } from '../types.js'
 
 export interface GroqProviderOptions {
@@ -20,6 +20,7 @@ export class GroqProvider implements LLMProvider {
   private readonly model: string
   private readonly fetchImpl: typeof fetch
   private readonly requestTimeoutMs: number
+  private lastTiming: LLMRequestTiming | null = null
 
   constructor(options: GroqProviderOptions) {
     this.endpoint = createEndpoint(options.baseUrl)
@@ -34,6 +35,7 @@ export class GroqProvider implements LLMProvider {
   }
 
   async decide(input: BrainInput): Promise<unknown> {
+    this.lastTiming = null
     const response = await this.fetchImpl(this.endpoint, {
       method: 'POST',
       headers: {
@@ -74,6 +76,7 @@ export class GroqProvider implements LLMProvider {
       throw new Error('Groq returned an invalid JSON response envelope.')
     }
 
+    this.lastTiming = readUsageTiming(envelope)
     const content = readMessageContent(envelope)
 
     try {
@@ -82,6 +85,28 @@ export class GroqProvider implements LLMProvider {
       throw new Error('Groq model response contained invalid JSON.')
     }
   }
+
+  getLastTiming(): LLMRequestTiming | null {
+    return this.lastTiming ? { ...this.lastTiming } : null
+  }
+}
+
+function readUsageTiming(envelope: unknown): LLMRequestTiming | null {
+  if (!isRecord(envelope) || !isRecord(envelope.usage)) return null
+
+  const promptTokens = readNonNegativeInteger(envelope.usage.prompt_tokens)
+  const outputTokens = readNonNegativeInteger(
+    envelope.usage.completion_tokens
+  )
+  if (promptTokens === null || outputTokens === null) return null
+
+  return { promptTokens, outputTokens }
+}
+
+function readNonNegativeInteger(value: unknown): number | null {
+  return Number.isInteger(value) && (value as number) >= 0
+    ? value as number
+    : null
 }
 
 function readMessageContent(envelope: unknown): string {

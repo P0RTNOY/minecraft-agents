@@ -54,6 +54,7 @@ const input: BrainInput = {
     goalType: 'establish_basic_resources',
     hasWood: true,
     hasPlanks: false,
+    hasSticks: false,
     hasCraftingTableItem: false,
     hasCraftingAccess: false,
     hasBasicTool: false,

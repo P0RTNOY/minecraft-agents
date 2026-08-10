@@ -3,9 +3,13 @@ import { describe, it } from 'node:test'
 
 import type { LLMProvider } from '../provider.js'
 import type { BrainInput } from '../types.js'
-import { BRAIN_BENCHMARK_SCENARIOS } from './scenarios.js'
+import {
+  AUTONOMOUS_BOOTSTRAP_SCENARIOS,
+  BRAIN_BENCHMARK_SCENARIOS
+} from './scenarios.js'
 import {
   runBrainBenchmark,
+  summarizeBrainBenchmark,
   type BrainBenchmarkScenario
 } from './run.js'
 
@@ -100,7 +104,7 @@ describe('runBrainBenchmark', () => {
         repeated: true,
         schemaFailure: false,
         unsafeTarget: false,
-        error: null
+        error: 'duplicate_say'
       }
     ])
     assert.equal(results[0]?.provider, 'scripted')
@@ -157,11 +161,11 @@ describe('runBrainBenchmark', () => {
       unsafeTarget: result.unsafeTarget
     })), [
       { scenario: 'invalid', valid: false, schemaFailure: true, unsafeTarget: false },
-      { scenario: 'self_target', valid: false, schemaFailure: false, unsafeTarget: true },
-      { scenario: 'hallucinated_target', valid: false, schemaFailure: false, unsafeTarget: true },
+      { scenario: 'self_target', valid: true, schemaFailure: false, unsafeTarget: true },
+      { scenario: 'hallucinated_target', valid: true, schemaFailure: false, unsafeTarget: true },
       { scenario: 'visible_target', valid: true, schemaFailure: false, unsafeTarget: false },
-      { scenario: 'uncraftable_item', valid: false, schemaFailure: false, unsafeTarget: true },
-      { scenario: 'unavailable_block', valid: false, schemaFailure: false, unsafeTarget: true }
+      { scenario: 'uncraftable_item', valid: true, schemaFailure: false, unsafeTarget: true },
+      { scenario: 'unavailable_block', valid: true, schemaFailure: false, unsafeTarget: true }
     ])
   })
 
@@ -204,6 +208,114 @@ describe('runBrainBenchmark', () => {
         schemaFailure: false,
         error: null
       }
+    ])
+  })
+
+  it('simulates grounded bootstrap progress and goal completion sequentially', async () => {
+    const bootstrap = AUTONOMOUS_BOOTSTRAP_SCENARIOS[0]
+    assert.ok(bootstrap)
+    const observedInputs: BrainInput[] = []
+    const outputs = [
+      { action: 'craft_item', item: 'oak_planks', amount: 12, reason: 'Create materials.' },
+      { action: 'craft_item', item: 'stick', amount: 4, reason: 'Create components.' },
+      { action: 'craft_item', item: 'crafting_table', amount: 1, reason: 'Create crafting access.' },
+      { action: 'place_block', block: 'crafting_table', reason: 'Enable table recipes.' },
+      { action: 'craft_item', item: 'wooden_pickaxe', amount: 1, reason: 'Create a basic tool.' }
+    ]
+    let call = 0
+    const results = await runBrainBenchmark({
+      provider: {
+        async decide(input) {
+          observedInputs.push(input)
+          const output = outputs[call]
+          call += 1
+          return output
+        },
+        getLastTiming: () => ({
+          promptTokens: 100,
+          outputTokens: 10,
+          loadDurationMs: 2,
+          outputTokensPerSecond: 20
+        })
+      },
+      providerName: 'scripted',
+      model: 'bootstrap-model',
+      scenarios: [{ ...bootstrap, samples: 5 }],
+      now: steppingClock(5)
+    })
+
+    assert.deepEqual(results.map(result => ({
+      action: result.action,
+      grounded: result.grounded,
+      policyAccepted: result.policyAccepted,
+      progressProduced: result.progressProduced,
+      goalCompleted: result.goalCompleted
+    })), [
+      { action: 'craft_item', grounded: true, policyAccepted: true, progressProduced: true, goalCompleted: false },
+      { action: 'craft_item', grounded: true, policyAccepted: true, progressProduced: true, goalCompleted: false },
+      { action: 'craft_item', grounded: true, policyAccepted: true, progressProduced: true, goalCompleted: false },
+      { action: 'place_block', grounded: true, policyAccepted: true, progressProduced: true, goalCompleted: false },
+      { action: 'craft_item', grounded: true, policyAccepted: true, progressProduced: true, goalCompleted: true }
+    ])
+    assert.deepEqual(observedInputs.map(input => ({
+      inventory: input.perception.inventory,
+      nearbyCraftingTable: input.perception.nearbyCraftingTable
+    })), [
+      { inventory: [{ name: 'oak_log', count: 3 }], nearbyCraftingTable: false },
+      { inventory: [{ name: 'oak_planks', count: 12 }], nearbyCraftingTable: false },
+      { inventory: [{ name: 'oak_planks', count: 10 }, { name: 'stick', count: 4 }], nearbyCraftingTable: false },
+      { inventory: [{ name: 'crafting_table', count: 1 }, { name: 'oak_planks', count: 6 }, { name: 'stick', count: 4 }], nearbyCraftingTable: false },
+      { inventory: [{ name: 'oak_planks', count: 6 }, { name: 'stick', count: 4 }], nearbyCraftingTable: true }
+    ])
+
+    assert.deepEqual(summarizeBrainBenchmark(results), {
+      provider: 'scripted',
+      model: 'bootstrap-model',
+      samples: 5,
+      validDecisions: 5,
+      groundedDecisions: 5,
+      policyAcceptedDecisions: 5,
+      actionDiversity: 2,
+      progressProducingDecisions: 5,
+      noProgressDecisions: 0,
+      idleDecisions: 0,
+      idleRate: 0,
+      repeatedNoProgressDecisions: 0,
+      completedGoals: 1,
+      goalScenarios: 1,
+      goalCompletionRate: 1,
+      meanLatencyMs: 5,
+      medianLatencyMs: 5,
+      promptTokens: 500,
+      outputTokens: 50,
+      meanLoadDurationMs: 2,
+      meanOutputTokensPerSecond: 20
+    })
+  })
+
+  it('records repeated no-progress decisions and applies repetition policy', async () => {
+    const bootstrap = AUTONOMOUS_BOOTSTRAP_SCENARIOS[0]
+    assert.ok(bootstrap)
+    const results = await runBrainBenchmark({
+      provider: scriptedProvider([
+        { action: 'idle', reason: 'Wait once.' },
+        { action: 'idle', reason: 'Wait twice.' },
+        { action: 'idle', reason: 'Wait again.' }
+      ]),
+      providerName: 'scripted',
+      model: 'idle-model',
+      scenarios: [{ ...bootstrap, samples: 3 }],
+      now: () => 0
+    })
+
+    assert.deepEqual(results.map(result => ({
+      policyAccepted: result.policyAccepted,
+      noProgress: result.noProgress,
+      repeatedNoProgress: result.repeatedNoProgress
+    })), [
+      { policyAccepted: true, noProgress: true, repeatedNoProgress: false },
+      { policyAccepted: true, noProgress: true, repeatedNoProgress: true },
+      { policyAccepted: false, noProgress: true, repeatedNoProgress: true }
     ])
   })
 })
@@ -264,5 +376,13 @@ function scriptedProvider(
       index += 1
       return output
     }
+  }
+}
+
+function steppingClock(step: number): () => number {
+  let time = 0
+  return () => {
+    time += step
+    return time
   }
 }

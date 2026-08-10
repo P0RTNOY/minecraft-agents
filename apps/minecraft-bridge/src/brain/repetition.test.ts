@@ -225,6 +225,7 @@ function progress(overrides: Partial<BrainInput['goalProgress']> = {}) {
     goalType: 'explore_for_resources' as const,
     hasWood: false,
     hasPlanks: false,
+    hasSticks: false,
     hasCraftingTableItem: false,
     hasCraftingAccess: false,
     hasBasicTool: false,

@@ -1,7 +1,10 @@
 import { loadBrainConfig } from '../config.js'
 import { createLLMProvider } from '../providers/index.js'
-import { runBrainBenchmark } from './run.js'
-import { BRAIN_BENCHMARK_SCENARIOS } from './scenarios.js'
+import {
+  runBrainBenchmark,
+  summarizeBrainBenchmark
+} from './run.js'
+import { AUTONOMOUS_BOOTSTRAP_SCENARIOS } from './scenarios.js'
 
 async function main(): Promise<void> {
   const config = loadBrainConfig()
@@ -13,12 +16,13 @@ async function main(): Promise<void> {
     provider: createLLMProvider(config),
     providerName: config.provider,
     model: config.model,
-    scenarios: BRAIN_BENCHMARK_SCENARIOS
+    scenarios: AUTONOMOUS_BOOTSTRAP_SCENARIOS
   })
 
   console.log(JSON.stringify({
     provider: config.provider,
     model: config.model,
+    summary: summarizeBrainBenchmark(results),
     results
   }, null, 2))
 }

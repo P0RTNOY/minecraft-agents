@@ -20,6 +20,7 @@ export interface GoalProgress {
   goalType: ShortTermGoalType
   hasWood: boolean
   hasPlanks: boolean
+  hasSticks: boolean
   hasCraftingTableItem: boolean
   hasCraftingAccess: boolean
   hasBasicTool: boolean
@@ -134,6 +135,7 @@ export function computeGoalProgress(
   const nearbyNames = new Set(perception.nearbyBlocks.map(block => block.name))
   const hasWood = intersects(inventoryNames, WOOD_ITEMS)
   const hasPlanks = [...inventoryNames].some(name => name.endsWith('_planks'))
+  const hasSticks = inventoryNames.has('stick')
   const hasCraftingTableItem = inventoryNames.has('crafting_table')
   const hasCraftingAccess = perception.nearbyCraftingTable
   const hasBasicTool = intersects(inventoryNames, BASIC_TOOLS)
@@ -146,6 +148,7 @@ export function computeGoalProgress(
     goalType,
     hasWood,
     hasPlanks,
+    hasSticks,
     hasCraftingTableItem,
     hasCraftingAccess,
     hasBasicTool,

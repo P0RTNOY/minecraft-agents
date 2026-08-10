@@ -124,6 +124,15 @@ describe('OllamaProvider', () => {
     assert.deepEqual(logs, [
       '🧠 LLM: 1840ms total | 12ms load | prompt 420 tok | output 34 tok | 28 tok/s'
     ])
+    assert.deepEqual(provider.getLastTiming(), {
+      totalDurationMs: 1840,
+      loadDurationMs: 12,
+      promptTokens: 420,
+      promptDurationMs: 300,
+      outputTokens: 34,
+      outputDurationMs: 1214.285714,
+      outputTokensPerSecond: 28
+    })
     assert.doesNotMatch(logs.join('\n'), /private reasoning/)
   })
 
@@ -174,6 +183,7 @@ describe('OllamaProvider', () => {
 
     assert.deepEqual(output, { action: 'scan', reason: 'Look around.' })
     assert.deepEqual(logs, [])
+    assert.equal(provider.getLastTiming(), null)
   })
 
   it('rejects HTTP failures without exposing a raw response body', async () => {

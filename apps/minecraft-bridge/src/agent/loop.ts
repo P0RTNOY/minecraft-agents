@@ -316,6 +316,7 @@ function formatGoalProgress(
   return [
     `wood=${progress.hasWood}`,
     `planks=${progress.hasPlanks}`,
+    `sticks=${progress.hasSticks}`,
     `table_item=${progress.hasCraftingTableItem}`,
     `crafting_access=${progress.hasCraftingAccess}`,
     `basic_tool=${progress.hasBasicTool}`,

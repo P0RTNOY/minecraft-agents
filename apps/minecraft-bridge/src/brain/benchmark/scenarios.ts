@@ -1,6 +1,10 @@
 import type { BrainInput, DecisionExecutionResult } from '../types.js'
 import type { BrainBenchmarkScenario } from './run.js'
 import { ShortTermGoalManager } from '../goals.js'
+import {
+  createBootstrapBrainInput,
+  simulateBootstrapDecision
+} from './bootstrap.js'
 
 const position = { x: 0, y: 64, z: 0 }
 
@@ -71,6 +75,17 @@ export const BRAIN_BENCHMARK_SCENARIOS: readonly BrainBenchmarkScenario[] = [
   scenario('self_only_player_identity', 'Alice is the only player-like identity.', {
     nearbyEntities: [entity(4, 'Alice', 'player', 0, 'UNKNOWN')]
   })
+]
+
+export const AUTONOMOUS_BOOTSTRAP_SCENARIOS: readonly BrainBenchmarkScenario[] = [
+  {
+    id: 'autonomous_bootstrap',
+    description: 'Bootstrap from a small amount of wood into crafting access and a basic tool.',
+    kind: 'sequential_goal',
+    input: createBootstrapBrainInput(),
+    samples: 8,
+    transition: simulateBootstrapDecision
+  }
 ]
 
 interface ScenarioOverrides {

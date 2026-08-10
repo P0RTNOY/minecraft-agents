@@ -3,7 +3,7 @@ import {
   serializeBrainInput,
   SYSTEM_INSTRUCTION
 } from '../decisionContract.js'
-import type { LLMProvider } from '../provider.js'
+import type { LLMProvider, LLMRequestTiming } from '../provider.js'
 import type { BrainInput } from '../types.js'
 
 export interface OllamaProviderOptions {
@@ -35,6 +35,7 @@ export class OllamaProvider implements LLMProvider {
   private readonly fetchImpl: typeof fetch
   private readonly logger: OllamaLogger
   private readonly requestTimeoutMs: number
+  private lastTiming: LLMRequestTiming | null = null
 
   constructor(options: OllamaProviderOptions) {
     this.endpoint = createEndpoint(options.baseUrl)
@@ -50,6 +51,7 @@ export class OllamaProvider implements LLMProvider {
   }
 
   async decide(input: BrainInput): Promise<unknown> {
+    this.lastTiming = null
     const response = await this.fetchImpl(this.endpoint, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -84,6 +86,7 @@ export class OllamaProvider implements LLMProvider {
     }
 
     const timing = readTiming(envelope)
+    this.lastTiming = timing ? normalizeTiming(timing) : null
     if (this.debugTiming && timing) {
       this.logger.log(formatTiming(timing))
     }
@@ -95,6 +98,24 @@ export class OllamaProvider implements LLMProvider {
     } catch {
       throw new Error('Ollama model response contained invalid JSON.')
     }
+  }
+
+  getLastTiming(): LLMRequestTiming | null {
+    return this.lastTiming ? { ...this.lastTiming } : null
+  }
+}
+
+function normalizeTiming(timing: OllamaTiming): LLMRequestTiming {
+  return {
+    totalDurationMs: preciseNanosecondsToMilliseconds(timing.totalDuration),
+    loadDurationMs: preciseNanosecondsToMilliseconds(timing.loadDuration),
+    promptTokens: timing.promptEvalCount,
+    promptDurationMs: preciseNanosecondsToMilliseconds(
+      timing.promptEvalDuration
+    ),
+    outputTokens: timing.evalCount,
+    outputDurationMs: preciseNanosecondsToMilliseconds(timing.evalDuration),
+    outputTokensPerSecond: tokensPerSecond(timing)
   }
 }
 
@@ -132,17 +153,19 @@ function readTiming(envelope: unknown): OllamaTiming | null {
 }
 
 function formatTiming(timing: OllamaTiming): string {
-  const tokensPerSecond = timing.evalDuration === 0
-    ? 0
-    : Math.round(timing.evalCount / (timing.evalDuration / 1_000_000_000))
-
   return [
     `🧠 LLM: ${nanosecondsToMilliseconds(timing.totalDuration)}ms total`,
     `${nanosecondsToMilliseconds(timing.loadDuration)}ms load`,
     `prompt ${timing.promptEvalCount} tok`,
     `output ${timing.evalCount} tok`,
-    `${tokensPerSecond} tok/s`
+    `${tokensPerSecond(timing)} tok/s`
   ].join(' | ')
+}
+
+function tokensPerSecond(timing: OllamaTiming): number {
+  return timing.evalDuration === 0
+    ? 0
+    : Math.round(timing.evalCount / (timing.evalDuration / 1_000_000_000))
 }
 
 function readNonNegativeNumber(value: unknown): number | null {
@@ -153,6 +176,10 @@ function readNonNegativeNumber(value: unknown): number | null {
 
 function nanosecondsToMilliseconds(nanoseconds: number): number {
   return Math.round(nanoseconds / 1_000_000)
+}
+
+function preciseNanosecondsToMilliseconds(nanoseconds: number): number {
+  return nanoseconds / 1_000_000
 }
 
 function readMessageContent(envelope: unknown): string {

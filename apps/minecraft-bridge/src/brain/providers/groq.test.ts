@@ -70,7 +70,12 @@ describe('GroqProvider', () => {
               }),
               reasoning: 'private reasoning must not be consumed'
             }
-          }]
+          }],
+          usage: {
+            prompt_tokens: 312,
+            completion_tokens: 27,
+            total_tokens: 339
+          }
         }))
       }
     })
@@ -108,6 +113,29 @@ describe('GroqProvider', () => {
     assert.equal(responseFormat.json_schema.name, 'agent_decision')
     assert.equal(responseFormat.json_schema.strict, true)
     assert.equal(Array.isArray(responseFormat.json_schema.schema.anyOf), true)
+    assert.deepEqual(provider.getLastTiming(), {
+      promptTokens: 312,
+      outputTokens: 27
+    })
+  })
+
+  it('reports no timing when standard usage metadata is unavailable', async () => {
+    const provider = new GroqProvider({
+      baseUrl: 'https://api.groq.com/openai/v1',
+      apiKey: 'test-api-key',
+      model: 'openai/gpt-oss-20b',
+      fetchImpl: async () => new Response(JSON.stringify({
+        choices: [{
+          message: {
+            content: JSON.stringify({ action: 'idle', reason: 'Wait.' })
+          }
+        }]
+      }))
+    })
+
+    await provider.decide(brainInput)
+
+    assert.equal(provider.getLastTiming(), null)
   })
 
   it('rejects missing credentials and unsafe base URLs', () => {

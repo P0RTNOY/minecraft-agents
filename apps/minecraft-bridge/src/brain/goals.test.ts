@@ -27,6 +27,7 @@ describe('goal progress', () => {
         goalType: 'establish_basic_resources',
         hasWood: true,
         hasPlanks: true,
+        hasSticks: false,
         hasCraftingTableItem: true,
         hasCraftingAccess: true,
         hasBasicTool: true,
