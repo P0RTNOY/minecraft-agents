@@ -70,6 +70,7 @@ export type BrainCycleResult =
         | 'manual_action_active'
         | 'action_in_progress'
         | 'priority_override'
+        | 'loop_stopped'
     }
   | { status: 'validation_failed'; issues: string[] }
   | {
@@ -100,6 +101,7 @@ export class AutonomousAgentLoop {
   private running = false
   private cycleInProgress = false
   private timer: NodeJS.Timeout | null = null
+  private lifecycleGeneration = 0
   private readonly idleWaiters = new Set<() => void>()
   private previousActionResult: DecisionExecutionResult | null = null
   private recentDecisions: readonly RecentDecision[] = []
@@ -131,6 +133,7 @@ export class AutonomousAgentLoop {
 
   stop(): void {
     this.running = false
+    this.lifecycleGeneration += 1
 
     if (this.timer) {
       clearTimeout(this.timer)
@@ -159,6 +162,7 @@ export class AutonomousAgentLoop {
     }
 
     this.cycleInProgress = true
+    const lifecycleGeneration = this.lifecycleGeneration
     const manualOverrideVersion = this.state.manualOverrideVersion
     const actionGeneration = this.arbiter.captureGeneration()
     this.logger.log('🧠 Brain cycle')
@@ -191,6 +195,9 @@ export class AutonomousAgentLoop {
         availableCapabilities: goalSnapshot.availableCapabilities
       }
       const memory = await this.retrieveMemory(inputWithoutMemory)
+      if (lifecycleGeneration !== this.lifecycleGeneration) {
+        return { status: 'skipped', reason: 'loop_stopped' }
+      }
       const input: BrainInput = { ...inputWithoutMemory, memory }
 
       if (goalSnapshot.transition?.completedGoal) {
@@ -216,6 +223,9 @@ export class AutonomousAgentLoop {
         const message = formatError(error)
         this.logger.error(`❌ Provider failure: ${message}`)
         return { status: 'provider_failed', error: message }
+      }
+      if (lifecycleGeneration !== this.lifecycleGeneration) {
+        return { status: 'skipped', reason: 'loop_stopped' }
       }
 
       const validation = this.validate(

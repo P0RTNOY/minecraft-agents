@@ -507,6 +507,30 @@ describe('AutonomousAgentLoop', () => {
     assert.equal(idleResolved, true)
   })
 
+  it('does not execute a provider decision that arrives after stop', async () => {
+    const decision = deferred<unknown>()
+    let executions = 0
+    const loop = createLoop({
+      provider: { decide: async () => decision.promise },
+      execute: async () => {
+        executions += 1
+        return successfulIdleResult()
+      }
+    })
+    const cycle = loop.runCycle()
+    await Promise.resolve()
+
+    loop.stop()
+    decision.resolve({ action: 'explore', reason: 'Explore.' })
+
+    assert.deepEqual(await cycle, {
+      status: 'skipped',
+      reason: 'loop_stopped'
+    })
+    assert.equal(executions, 0)
+    await loop.waitForIdle()
+  })
+
   it('handles provider failure and allows a future cycle to retry', async () => {
     let attempts = 0
     const provider: LLMProvider = {
