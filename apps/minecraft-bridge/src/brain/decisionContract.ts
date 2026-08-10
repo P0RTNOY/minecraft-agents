@@ -13,6 +13,7 @@ export const SYSTEM_INSTRUCTION = [
   'The observations are the current game state; choose exactly one allowed action.',
   'Use the active short-term goal and progress facts; prefer a grounded action that materially changes goal progress.',
   'For targeted actions, use an exact target listed in availableCapabilities.',
+  'Craft amount is desired output count in recipeOutput batches. Craft only what is useful, not maxCraftable; preserve ingredients for other grounded capabilities.',
   'Avoid idle when a grounded action can advance the goal, and avoid pointless repetition. Do not repeat actions that made no progress.',
   'Do not greet without a contextual reason. Do not invent items, blocks, players, recipes, or resources.',
   'Health and food use 0-20; low health is dangerous. Keep the reason very short.',
@@ -107,7 +108,12 @@ function craftingDecisionSchema() {
         minLength: 1,
         maxLength: MAX_BLOCK_NAME_LENGTH
       },
-      amount: { type: 'integer', minimum: 1, maximum: MAX_CRAFT_AMOUNT },
+      amount: {
+        type: 'integer',
+        minimum: 1,
+        maximum: MAX_CRAFT_AMOUNT,
+        description: 'Desired output item count; use a multiple of recipeOutput from availableCapabilities.'
+      },
       reason: { type: 'string', minLength: 1, maxLength: MAX_REASON_LENGTH }
     },
     required: ['action', 'item', 'amount', 'reason'],

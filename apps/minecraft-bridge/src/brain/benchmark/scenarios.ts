@@ -38,6 +38,7 @@ export const BRAIN_BENCHMARK_SCENARIOS: readonly BrainBenchmarkScenario[] = [
     inventory: [{ name: 'oak_log', count: 1 }],
     craftableItems: [{
       item: 'oak_planks',
+      recipeOutput: 4,
       maxCraftable: 4,
       requiresTable: false
     }]
@@ -46,6 +47,7 @@ export const BRAIN_BENCHMARK_SCENARIOS: readonly BrainBenchmarkScenario[] = [
     inventory: [{ name: 'oak_planks', count: 4 }],
     craftableItems: [{
       item: 'crafting_table',
+      recipeOutput: 1,
       maxCraftable: 1,
       requiresTable: false
     }]
@@ -57,6 +59,7 @@ export const BRAIN_BENCHMARK_SCENARIOS: readonly BrainBenchmarkScenario[] = [
     ],
     craftableItems: [{
       item: 'wooden_pickaxe',
+      recipeOutput: 1,
       maxCraftable: 1,
       requiresTable: true
     }],

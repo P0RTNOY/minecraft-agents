@@ -104,6 +104,7 @@ export function fingerprintBrainState(input: BrainInput): string {
     craftableItems: input.perception.craftableItems
       .map(item => ({
         item: item.item,
+        recipeOutput: item.recipeOutput,
         maxCraftable: item.maxCraftable,
         requiresTable: item.requiresTable
       }))

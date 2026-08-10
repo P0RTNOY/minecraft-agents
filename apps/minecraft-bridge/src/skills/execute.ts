@@ -196,6 +196,12 @@ export function createDecisionExecutor(
             details: {
               requested: result.requested,
               crafted: result.crafted,
+              ...(result.recipeOutput !== null
+                ? { recipeOutput: result.recipeOutput }
+                : {}),
+              executionCount: result.executionCount,
+              retryCount: result.retryCount,
+              retryResult: result.retryResult,
               ...(result.reason ? { reason: result.reason } : {}),
               ...(result.error ? { error: result.error } : {})
             }

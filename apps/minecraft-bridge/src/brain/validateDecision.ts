@@ -180,6 +180,11 @@ export function validateDecision(
             path: 'amount',
             message: 'Amount exceeds the current craftable maximum.'
           })
+        } else if (amount % capability.recipeOutput !== 0) {
+          issues.push({
+            path: 'amount',
+            message: 'Amount must align to the current recipe output batch.'
+          })
         }
       }
 

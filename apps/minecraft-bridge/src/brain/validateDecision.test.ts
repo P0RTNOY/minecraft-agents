@@ -240,6 +240,7 @@ describe('validateDecision', () => {
       visibleNearbyBlocks: [],
       craftableItems: [{
         item: 'oak_planks',
+        recipeOutput: 4,
         maxCraftable: 8,
         requiresTable: false
       }]
@@ -256,6 +257,12 @@ describe('validateDecision', () => {
       item: 'diamond_pickaxe',
       amount: 1,
       reason: 'Upgrade.'
+    }, context).success, false)
+    assert.equal(validateDecision({
+      action: 'craft_item',
+      item: 'oak_planks',
+      amount: 2,
+      reason: 'Need a partial batch.'
     }, context).success, false)
     assert.equal(validateDecision({
       action: 'craft_item',

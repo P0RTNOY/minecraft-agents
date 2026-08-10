@@ -14,6 +14,7 @@ import { isExpectedNavigationCancellation } from './movement.js'
 
 export interface CraftableItemSnapshot {
   item: string
+  recipeOutput: number
   maxCraftable: number
   requiresTable: boolean
 }
@@ -25,6 +26,7 @@ export interface CraftingCapabilities {
 
 export type CraftFailureReason =
   | 'invalid_amount'
+  | 'invalid_output_amount'
   | 'unknown_item'
   | 'recipe_unavailable'
   | 'insufficient_ingredients'
@@ -42,6 +44,10 @@ export interface CraftResult {
   target: string
   requested: number
   crafted: number
+  recipeOutput: number | null
+  executionCount: number
+  retryCount: 0 | 1
+  retryResult: 'not_needed' | 'succeeded' | 'failed'
   status: 'completed' | 'cancelled' | 'failed'
   reason?: CraftFailureReason
   error?: string
@@ -102,6 +108,7 @@ export function inspectCraftingCapabilities(
 
       const candidate = {
         item: item.name,
+        recipeOutput: recipe.result.count,
         maxCraftable,
         requiresTable: recipe.requiresTable
       }
@@ -190,6 +197,12 @@ async function craftItemWith(
     )
   }
 
+  if (!isOutputAmountAligned(amount, recipe)) {
+    return failedResult(itemName, amount, 'invalid_output_amount', {
+      recipeOutput: recipe.result.count
+    })
+  }
+
   const actionVersion = beginAgentAction(
     state,
     'crafting',
@@ -226,6 +239,11 @@ async function craftItemWith(
       if (!recipe) {
         return failedResult(itemName, amount, 'insufficient_ingredients')
       }
+      if (!isOutputAmountAligned(amount, recipe)) {
+        return failedResult(itemName, amount, 'invalid_output_amount', {
+          recipeOutput: recipe.result.count
+        })
+      }
     }
 
     if (state.actionVersion !== actionVersion) {
@@ -234,74 +252,239 @@ async function craftItemWith(
       })
     }
 
-    const applications = Math.ceil(amount / recipe.result.count)
+    const applications = amount / recipe.result.count
     const inventoryBeforeCraft = snapshotInventoryCounts(bot.inventory.items())
     const initialCount = countItemStacks(
       inventoryBeforeCraft,
       registryItem.id,
       null
     )
-    try {
-      await bot.craft(
-        recipe,
-        applications,
-        recipe.requiresTable ? craftingTable ?? undefined : undefined
-      )
-    } catch (error) {
-      return failedResult(itemName, amount, 'craft_failed', {
-        error: formatError(error)
+    const firstAttempt = await performCraftAttempt(
+      bot,
+      state,
+      actionVersion,
+      recipe,
+      applications,
+      recipe.requiresTable ? craftingTable ?? undefined : undefined,
+      inventoryBeforeCraft,
+      registryItem.id,
+      initialCount
+    )
+    const baseDetails: Partial<CraftResult> = {
+      recipeOutput: recipe.result.count,
+      executionCount: applications
+    }
+
+    if (firstAttempt.success) {
+      return completedResult(itemName, amount, firstAttempt.crafted, baseDetails)
+    }
+    if (firstAttempt.reason === 'action_cancelled') {
+      return failedResult(itemName, amount, firstAttempt.reason, {
+        ...baseDetails,
+        status: 'cancelled',
+        crafted: firstAttempt.crafted
       })
     }
 
-    let inventoryAfterCraft = snapshotInventoryCounts(bot.inventory.items())
-    for (let tick = 0; tick < MAX_CRAFT_CONFIRMATION_TICKS; tick += 1) {
-      await bot.waitForTicks(1)
-      inventoryAfterCraft = snapshotInventoryCounts(bot.inventory.items())
-      if (matchesRecipeDelta(
+    const retryable = recipe.requiresTable && firstAttempt.inventoryUnchanged && (
+      firstAttempt.reason === 'output_not_confirmed' ||
+      (
+        firstAttempt.reason === 'craft_failed' &&
+        firstAttempt.transientTableSyncFailure
+      )
+    )
+    if (!retryable) {
+      return failedResult(itemName, amount, firstAttempt.reason, {
+        ...baseDetails,
+        crafted: firstAttempt.crafted,
+        ...(firstAttempt.error ? { error: firstAttempt.error } : {})
+      })
+    }
+
+    if (state.actionVersion !== actionVersion) {
+      return failedResult(itemName, amount, 'action_cancelled', {
+        ...baseDetails,
+        status: 'cancelled'
+      })
+    }
+
+    const refreshedTable = reacquireCraftingTable(bot)
+    if (!refreshedTable) {
+      return failedResult(itemName, amount, 'crafting_table_unavailable', baseDetails)
+    }
+    const retryRecipe = selectRecipe(
+      bot,
+      registryItem.id,
+      amount,
+      refreshedTable
+    )
+    if (!retryRecipe) {
+      return failedResult(itemName, amount, 'insufficient_ingredients', baseDetails)
+    }
+    if (!isOutputAmountAligned(amount, retryRecipe)) {
+      return failedResult(itemName, amount, 'invalid_output_amount', {
+        recipeOutput: retryRecipe.result.count
+      })
+    }
+
+    const inventoryBeforeRetry = snapshotInventoryCounts(bot.inventory.items())
+    if (!inventoryCountsEqual(inventoryBeforeCraft, inventoryBeforeRetry)) {
+      return failedResult(itemName, amount, 'inventory_changed', baseDetails)
+    }
+
+    const retryApplications = amount / retryRecipe.result.count
+    const retryDetails: Partial<CraftResult> = {
+      recipeOutput: retryRecipe.result.count,
+      executionCount: retryApplications,
+      retryCount: 1
+    }
+    const retryAttempt = await performCraftAttempt(
+      bot,
+      state,
+      actionVersion,
+      retryRecipe,
+      retryApplications,
+      refreshedTable,
+      inventoryBeforeRetry,
+      registryItem.id,
+      initialCount
+    )
+    if (retryAttempt.success) {
+      return completedResult(itemName, amount, retryAttempt.crafted, {
+        ...retryDetails,
+        retryResult: 'succeeded'
+      })
+    }
+
+    return failedResult(itemName, amount, retryAttempt.reason, {
+      ...retryDetails,
+      retryResult: 'failed',
+      crafted: retryAttempt.crafted,
+      ...(retryAttempt.reason === 'action_cancelled'
+        ? { status: 'cancelled' }
+        : {}),
+      ...(retryAttempt.error ? { error: retryAttempt.error } : {})
+    })
+  } finally {
+    finishAgentAction(state, actionVersion)
+  }
+}
+
+interface CraftAttemptResult {
+  success: boolean
+  crafted: number
+  reason: Extract<
+    CraftFailureReason,
+    'action_cancelled' | 'craft_failed' | 'inventory_changed' | 'output_not_confirmed'
+  >
+  inventoryUnchanged: boolean
+  transientTableSyncFailure: boolean
+  error?: string
+}
+
+async function performCraftAttempt(
+  bot: Bot,
+  state: AgentState,
+  actionVersion: number,
+  recipe: Recipe,
+  applications: number,
+  craftingTable: Block | undefined,
+  inventoryBeforeCraft: readonly InventoryCountItem[],
+  resultItemType: number,
+  initialCount: number
+): Promise<CraftAttemptResult> {
+  let craftError: unknown = null
+  try {
+    await bot.craft(recipe, applications, craftingTable)
+  } catch (error) {
+    craftError = error
+  }
+
+  let inventoryAfterCraft = snapshotInventoryCounts(bot.inventory.items())
+  const shouldWaitForReconciliation = craftError === null ||
+    isTransientTableSyncError(craftError)
+  for (
+    let tick = 0;
+    shouldWaitForReconciliation &&
+      tick < MAX_CRAFT_CONFIRMATION_TICKS &&
+      !matchesRecipeDelta(
         inventoryBeforeCraft,
         inventoryAfterCraft,
         recipe,
         applications
-      )) break
+      ) &&
+      state.actionVersion === actionVersion;
+    tick += 1
+  ) {
+    await bot.waitForTicks(1)
+    inventoryAfterCraft = snapshotInventoryCounts(bot.inventory.items())
+  }
 
-      if (state.actionVersion !== actionVersion) break
+  const crafted = Math.max(
+    0,
+    countItemStacks(inventoryAfterCraft, resultItemType, null) - initialCount
+  )
+  const inventoryUnchanged = inventoryCountsEqual(
+    inventoryBeforeCraft,
+    inventoryAfterCraft
+  )
+
+  if (state.actionVersion !== actionVersion) {
+    return {
+      success: false,
+      crafted,
+      reason: 'action_cancelled',
+      inventoryUnchanged,
+      transientTableSyncFailure: false
     }
-    const crafted = Math.max(
-      0,
-      countItemStacks(inventoryAfterCraft, registryItem.id, null) - initialCount
-    )
-
-    if (state.actionVersion !== actionVersion) {
-      return failedResult(itemName, amount, 'action_cancelled', {
-        status: 'cancelled',
-        crafted
-      })
-    }
-
-    if (crafted < amount) {
-      return failedResult(itemName, amount, 'output_not_confirmed', { crafted })
-    }
-
-    if (!matchesRecipeDelta(
-      inventoryBeforeCraft,
-      inventoryAfterCraft,
-      recipe,
-      applications
-    )) {
-      return failedResult(itemName, amount, 'inventory_changed', { crafted })
-    }
-
+  }
+  if (matchesRecipeDelta(
+    inventoryBeforeCraft,
+    inventoryAfterCraft,
+    recipe,
+    applications
+  )) {
     return {
       success: true,
-      action: 'craft_item',
-      target: itemName,
-      requested: amount,
       crafted,
-      status: 'completed'
+      reason: 'output_not_confirmed',
+      inventoryUnchanged: false,
+      transientTableSyncFailure: false
     }
-  } finally {
-    finishAgentAction(state, actionVersion)
   }
+  if (!inventoryUnchanged) {
+    return {
+      success: false,
+      crafted,
+      reason: 'inventory_changed',
+      inventoryUnchanged: false,
+      transientTableSyncFailure: false
+    }
+  }
+  if (craftError !== null) {
+    return {
+      success: false,
+      crafted,
+      reason: 'craft_failed',
+      inventoryUnchanged: true,
+      transientTableSyncFailure: isTransientTableSyncError(craftError),
+      error: formatError(craftError)
+    }
+  }
+  return {
+    success: false,
+    crafted,
+    reason: 'output_not_confirmed',
+    inventoryUnchanged: true,
+    transientTableSyncFailure: true
+  }
+}
+
+function reacquireCraftingTable(bot: Bot): Block | null {
+  const found = findNearbyCraftingTable(bot, DEFAULT_CRAFTING_TABLE_RADIUS)
+  if (!found) return null
+  const current = bot.blockAt(found.position)
+  return current?.name === 'crafting_table' ? current : null
 }
 
 export function findNearbyCraftingTable(
@@ -325,6 +508,10 @@ function selectRecipe(
       Number(left.requiresTable) - Number(right.requiresTable) ||
       right.result.count - left.result.count
     ))[0] ?? null
+}
+
+function isOutputAmountAligned(amount: number, recipe: Recipe): boolean {
+  return recipe.result.count > 0 && amount % recipe.result.count === 0
 }
 
 function maximumCraftableOutput(
@@ -364,6 +551,22 @@ function snapshotInventoryCounts(
   }))
 }
 
+function inventoryCountsEqual(
+  left: readonly InventoryCountItem[],
+  right: readonly InventoryCountItem[]
+): boolean {
+  const keys = new Set([
+    ...left.map(item => `${item.type}:${item.metadata}`),
+    ...right.map(item => `${item.type}:${item.metadata}`)
+  ])
+
+  return [...keys].every(key => {
+    const [type, metadata] = key.split(':').map(Number)
+    return countItemStacks(left, type ?? -1, metadata ?? -1) ===
+      countItemStacks(right, type ?? -1, metadata ?? -1)
+  })
+}
+
 function matchesRecipeDelta(
   before: readonly InventoryCountItem[],
   after: readonly InventoryCountItem[],
@@ -394,6 +597,27 @@ function navigationFailure(
   })
 }
 
+function completedResult(
+  target: string,
+  requested: number,
+  crafted: number,
+  details: Partial<CraftResult>
+): CraftResult {
+  return {
+    success: true,
+    action: 'craft_item',
+    target,
+    requested,
+    crafted,
+    recipeOutput: null,
+    executionCount: 0,
+    retryCount: 0,
+    retryResult: 'not_needed',
+    status: 'completed',
+    ...details
+  }
+}
+
 function failedResult(
   target: string,
   requested: number,
@@ -406,6 +630,10 @@ function failedResult(
     target,
     requested,
     crafted: 0,
+    recipeOutput: null,
+    executionCount: 0,
+    retryCount: 0,
+    retryResult: 'not_needed',
     status: 'failed',
     reason,
     ...details
@@ -414,4 +642,8 @@ function failedResult(
 
 function formatError(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
+}
+
+function isTransientTableSyncError(error: unknown): boolean {
+  return /windowOpen/i.test(formatError(error))
 }

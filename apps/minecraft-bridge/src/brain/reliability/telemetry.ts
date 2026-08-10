@@ -16,6 +16,16 @@ export type BootstrapFailureReason =
   | 'world_state_failure'
   | 'infrastructure_invalid'
 
+export interface CraftTelemetryEvent {
+  requestedAmount: number | null
+  recipeOutput: number | null
+  executionCount: number
+  retryCount: 0 | 1
+  retryResult: 'not_needed' | 'succeeded' | 'failed'
+  success: boolean
+  failureReason: string | null
+}
+
 export interface BootstrapRunResult {
   runId: string
   provider: string
@@ -43,6 +53,7 @@ export interface BootstrapRunResult {
   llmLatenciesMs: number[]
   actionCounts: Record<string, number>
   skillFailureReasons: Record<string, number>
+  craftEvents: CraftTelemetryEvent[]
   failureReason: BootstrapFailureReason | null
   finalProgress: GoalProgress | null
   finalInventory: InventoryItemSnapshot[]
@@ -62,6 +73,8 @@ export interface BootstrapReliabilitySummary {
   progressActionRate: number
   noProgressRate: number
   craftFailureRate: number
+  craftRetryRate: number
+  craftRetrySuccessRate: number
   groundingRejectionRate: number
   validationRejectionRate: number
   providerFailureRate: number
@@ -93,6 +106,7 @@ export class BootstrapRunTelemetry {
   private manualOverrides = 0
   private readonly actionCounts: Record<string, number> = {}
   private readonly skillFailureReasons: Record<string, number> = {}
+  private readonly craftEvents: CraftTelemetryEvent[] = []
 
   constructor(identity: Pick<BootstrapRunResult, 'runId' | 'provider' | 'model' | 'startedAt'>) {
     this.identity = identity
@@ -120,6 +134,9 @@ export class BootstrapRunTelemetry {
     if (cycle.status === 'executed') {
       this.actionCounts[cycle.decision.action] =
         (this.actionCounts[cycle.decision.action] ?? 0) + 1
+      if (cycle.result.action === 'craft_item') {
+        this.recordCraftEvent(cycle.result)
+      }
       if (progressChanged(beforeProgress, afterProgress)) {
         this.progressActionCount += 1
       } else {
@@ -133,6 +150,9 @@ export class BootstrapRunTelemetry {
     }
 
     if (cycle.status === 'execution_failed') {
+      if (cycle.result.action === 'craft_item') {
+        this.recordCraftEvent(cycle.result)
+      }
       this.recordSkillFailure(cycle.result)
       this.noteFailure(classifyResultDetails(cycle.result))
     } else if (cycle.status === 'provider_failed') {
@@ -200,6 +220,7 @@ export class BootstrapRunTelemetry {
       llmLatenciesMs: [...this.llmLatenciesMs],
       actionCounts: { ...this.actionCounts },
       skillFailureReasons: { ...this.skillFailureReasons },
+      craftEvents: this.craftEvents.map(event => ({ ...event })),
       failureReason,
       finalProgress: options.finalProgress ? { ...options.finalProgress } : null,
       finalInventory: options.finalInventory.map(item => ({ ...item }))
@@ -221,6 +242,27 @@ export class BootstrapRunTelemetry {
       : 'unknown'
     const key = `${result.action}:${reason}`
     this.skillFailureReasons[key] = (this.skillFailureReasons[key] ?? 0) + 1
+  }
+
+  private recordCraftEvent(result: {
+    success: boolean
+    details?: Record<string, unknown>
+  }): void {
+    const retryCount = result.details?.retryCount === 1 ? 1 : 0
+    const retryResult = isRetryResult(result.details?.retryResult)
+      ? result.details.retryResult
+      : 'not_needed'
+    this.craftEvents.push({
+      requestedAmount: positiveIntegerOrNull(result.details?.requested),
+      recipeOutput: positiveIntegerOrNull(result.details?.recipeOutput),
+      executionCount: positiveIntegerOrZero(result.details?.executionCount),
+      retryCount,
+      retryResult,
+      success: result.success,
+      failureReason: typeof result.details?.reason === 'string'
+        ? result.details.reason
+        : null
+    })
   }
 }
 
@@ -256,6 +298,8 @@ export function summarizeBootstrapRuns(
   const completed = valid.filter(run => run.goalCompleted)
   const totalActions = sum(valid, run => run.progressActionCount + run.noProgressCount)
   const totalCalls = sum(valid, run => run.providerCalls)
+  const craftEvents = valid.flatMap(run => run.craftEvents ?? [])
+  const retriedCrafts = craftEvents.filter(event => event.retryCount === 1)
   const failureCounts = new Map<BootstrapFailureReason, number>()
   for (const run of valid) {
     if (run.failureReason) failureCounts.set(
@@ -280,6 +324,11 @@ export function summarizeBootstrapRuns(
     craftFailureRate: ratio(
       sum(valid, run => run.craftFailures),
       sum(valid, run => run.actionCounts.craft_item ?? 0)
+    ),
+    craftRetryRate: ratio(retriedCrafts.length, craftEvents.length),
+    craftRetrySuccessRate: ratio(
+      retriedCrafts.filter(event => event.retryResult === 'succeeded').length,
+      retriedCrafts.length
     ),
     groundingRejectionRate: ratio(sum(valid, run => run.groundingRejections), totalCalls),
     validationRejectionRate: ratio(sum(valid, run => run.validationFailures), totalCalls),
@@ -332,4 +381,20 @@ function median(values: readonly number[]): number | null {
   return sorted.length % 2 === 0
     ? ((sorted[middle - 1] ?? 0) + (sorted[middle] ?? 0)) / 2
     : sorted[middle] ?? null
+}
+
+function positiveIntegerOrNull(value: unknown): number | null {
+  return Number.isInteger(value) && (value as number) > 0
+    ? value as number
+    : null
+}
+
+function positiveIntegerOrZero(value: unknown): number {
+  return positiveIntegerOrNull(value) ?? 0
+}
+
+function isRetryResult(
+  value: unknown
+): value is CraftTelemetryEvent['retryResult'] {
+  return value === 'not_needed' || value === 'succeeded' || value === 'failed'
 }

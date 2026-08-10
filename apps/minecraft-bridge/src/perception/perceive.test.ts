@@ -72,6 +72,7 @@ describe('perceive', () => {
     assert.equal(inventoryReads, 1)
     assert.deepEqual(result.craftableItems, [{
       item: 'oak_planks',
+      recipeOutput: 4,
       maxCraftable: 8,
       requiresTable: false
     }])

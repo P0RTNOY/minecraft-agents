@@ -43,6 +43,7 @@ describe('AutonomousAgentLoop', () => {
         edibleItemCount: 0,
         craftableItems: [{
           item: 'oak_planks',
+          recipeOutput: 4,
           maxCraftable: 4,
           requiresTable: false
         }],
@@ -65,6 +66,7 @@ describe('AutonomousAgentLoop', () => {
       observedCollectableBlocks: ['oak_log'],
       craftableItems: [{
         item: 'oak_planks',
+        recipeOutput: 4,
         maxCraftable: 4,
         requiresTable: false
       }],

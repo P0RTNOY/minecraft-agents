@@ -156,6 +156,7 @@ describe('assessRepetition', () => {
         inventory: [{ name: 'oak_planks', count: 4 }],
         craftableItems: [{
           item: 'stick',
+          recipeOutput: 4,
           maxCraftable: 8,
           requiresTable: false
         }]

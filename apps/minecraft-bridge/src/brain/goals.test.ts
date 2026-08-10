@@ -45,6 +45,7 @@ describe('goal progress', () => {
       inventory: [{ name: 'oak_log', count: 1 }],
       craftableItems: [{
         item: 'oak_planks',
+        recipeOutput: 4,
         maxCraftable: 4,
         requiresTable: false
       }]
@@ -53,6 +54,7 @@ describe('goal progress', () => {
       inventory: [{ name: 'oak_planks', count: 4 }],
       craftableItems: [{
         item: 'crafting_table',
+        recipeOutput: 1,
         maxCraftable: 1,
         requiresTable: false
       }]
@@ -81,6 +83,7 @@ describe('goal progress', () => {
       ],
       craftableItems: [{
         item: 'oak_planks',
+        recipeOutput: 4,
         maxCraftable: 4,
         requiresTable: false
       }],
@@ -91,6 +94,7 @@ describe('goal progress', () => {
       observedCollectableBlocks: ['dirt', 'oak_log'],
       craftableItems: [{
         item: 'oak_planks',
+        recipeOutput: 4,
         maxCraftable: 4,
         requiresTable: false
       }],

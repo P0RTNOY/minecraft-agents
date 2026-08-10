@@ -291,6 +291,7 @@ describe('runBrainBenchmark', () => {
       { action: 'place_block', grounded: true, policyAccepted: true, progressProduced: true, goalCompleted: false },
       { action: 'craft_item', grounded: true, policyAccepted: true, progressProduced: true, goalCompleted: true }
     ])
+    assert.deepEqual(results.map(result => result.decision), outputs)
     assert.deepEqual(observedInputs.map(input => ({
       inventory: input.perception.inventory,
       nearbyCraftingTable: input.perception.nearbyCraftingTable
@@ -384,7 +385,12 @@ describe('BRAIN_BENCHMARK_SCENARIOS', () => {
     assert.deepEqual(
       BRAIN_BENCHMARK_SCENARIOS.find(item => item.id === 'craftable_planks')
         ?.input.perception.craftableItems,
-      [{ item: 'oak_planks', maxCraftable: 4, requiresTable: false }]
+      [{
+        item: 'oak_planks',
+        recipeOutput: 4,
+        maxCraftable: 4,
+        requiresTable: false
+      }]
     )
     assert.equal(
       BRAIN_BENCHMARK_SCENARIOS.find(item => item.id === 'table_recipe_available')

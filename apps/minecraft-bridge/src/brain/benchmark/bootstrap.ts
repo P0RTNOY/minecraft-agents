@@ -21,6 +21,7 @@ export function createBootstrapBrainInput(): BrainInput {
     edibleItemCount: 0,
     craftableItems: [{
       item: 'oak_planks',
+      recipeOutput: 4,
       maxCraftable: 12,
       requiresTable: false
     }],
@@ -98,13 +99,13 @@ function applyCraft(
 ): void {
   switch (item) {
     case 'oak_planks': {
-      const applications = Math.ceil(amount / 4)
+      const applications = amount / 4
       remove(inventory, 'oak_log', applications)
       add(inventory, 'oak_planks', applications * 4)
       return
     }
     case 'stick': {
-      const applications = Math.ceil(amount / 4)
+      const applications = amount / 4
       remove(inventory, 'oak_planks', applications * 2)
       add(inventory, 'stick', applications * 4)
       return
@@ -132,6 +133,7 @@ function computeCraftableItems(
   if (oakLogs > 0) {
     craftable.push({
       item: 'oak_planks',
+      recipeOutput: 4,
       maxCraftable: oakLogs * 4,
       requiresTable: false
     })
@@ -139,6 +141,7 @@ function computeCraftableItems(
   if (planks >= 4) {
     craftable.push({
       item: 'crafting_table',
+      recipeOutput: 1,
       maxCraftable: Math.floor(planks / 4),
       requiresTable: false
     })
@@ -146,6 +149,7 @@ function computeCraftableItems(
   if (planks >= 2) {
     craftable.push({
       item: 'stick',
+      recipeOutput: 4,
       maxCraftable: Math.floor(planks / 2) * 4,
       requiresTable: false
     })
@@ -153,6 +157,7 @@ function computeCraftableItems(
   if (nearbyCraftingTable && planks >= 3 && sticks >= 2) {
     craftable.push({
       item: 'wooden_pickaxe',
+      recipeOutput: 1,
       maxCraftable: Math.min(
         Math.floor(planks / 3),
         Math.floor(sticks / 2)

@@ -28,8 +28,20 @@ describe('BootstrapRunTelemetry', () => {
     await wrapped.decide({} as never)
     timing = { promptTokens: 80, outputTokens: 10 }
     await wrapped.decide({} as never)
-    telemetry.recordCycle(executed('craft_item', true), progress(false), progress(true))
-    telemetry.recordCycle(executed('craft_item', false, 'inventory_changed'), progress(true), progress(true))
+    telemetry.recordCycle(executed('craft_item', true, undefined, {
+      requested: 4,
+      recipeOutput: 4,
+      executionCount: 1,
+      retryCount: 1,
+      retryResult: 'succeeded'
+    }), progress(false), progress(true))
+    telemetry.recordCycle(executed('craft_item', false, 'inventory_changed', {
+      requested: 1,
+      recipeOutput: 1,
+      executionCount: 1,
+      retryCount: 0,
+      retryResult: 'not_needed'
+    }), progress(true), progress(true))
 
     const result = telemetry.finish({
       completedAt: 250,
@@ -49,6 +61,26 @@ describe('BootstrapRunTelemetry', () => {
     assert.deepEqual(result.skillFailureReasons, {
       'craft_item:inventory_changed': 1
     })
+    assert.deepEqual(result.craftEvents, [{
+      requestedAmount: 4,
+      recipeOutput: 4,
+      executionCount: 1,
+      retryCount: 1,
+      retryResult: 'succeeded',
+      success: true,
+      failureReason: null
+    }, {
+      requestedAmount: 1,
+      recipeOutput: 1,
+      executionCount: 1,
+      retryCount: 0,
+      retryResult: 'not_needed',
+      success: false,
+      failureReason: 'inventory_changed'
+    }])
+    const summary = summarizeBootstrapRuns([result])
+    assert.equal(summary.craftRetryRate, 0.5)
+    assert.equal(summary.craftRetrySuccessRate, 1)
     assert.equal(result.goalCompleted, true)
     assert.equal(result.success, true)
   })
@@ -113,13 +145,20 @@ function progress(completed: boolean): GoalProgress {
   }
 }
 
-function executed(action: 'craft_item', success: boolean, reason?: string): BrainCycleResult {
+function executed(
+  action: 'craft_item',
+  success: boolean,
+  reason?: string,
+  details: Record<string, unknown> = {}
+): BrainCycleResult {
   return {
     status: 'executed',
     decision: { action, item: 'wooden_pickaxe', amount: 1, reason: 'Build.' },
     result: {
       success, action, status: success ? 'completed' : 'failed', summary: 'craft',
-      ...(reason ? { details: { reason } } : {})
+      ...(reason || Object.keys(details).length > 0
+        ? { details: { ...details, ...(reason ? { reason } : {}) } }
+        : {})
     }
   }
 }

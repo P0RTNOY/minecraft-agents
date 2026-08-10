@@ -67,6 +67,7 @@ const input: BrainInput = {
     edibleItemCount: 2,
     craftableItems: [{
       item: 'oak_planks',
+      recipeOutput: 4,
       maxCraftable: 8,
       requiresTable: false
     }],
@@ -90,6 +91,7 @@ const input: BrainInput = {
     observedCollectableBlocks: ['bamboo', 'dirt', 'grass_block'],
     craftableItems: [{
       item: 'oak_planks',
+      recipeOutput: 4,
       maxCraftable: 8,
       requiresTable: false
     }],
@@ -113,6 +115,7 @@ describe('buildBrainSemantics', () => {
         hasFood: true,
         craftableItems: [{
           item: 'oak_planks',
+          recipeOutput: 4,
           maxCraftable: 8,
           requiresTable: false
         }],
@@ -167,6 +170,7 @@ describe('buildBrainSemantics', () => {
       hasFood: true,
       craftableItems: [{
         item: 'oak_planks',
+        recipeOutput: 4,
         maxCraftable: 8,
         requiresTable: false
       }],
@@ -186,6 +190,7 @@ describe('buildDecisionContext', () => {
       visibleNearbyBlocks: ['grass_block', 'dirt', 'bamboo'],
       craftableItems: [{
         item: 'oak_planks',
+        recipeOutput: 4,
         maxCraftable: 8,
         requiresTable: false
       }],

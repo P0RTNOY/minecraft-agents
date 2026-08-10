@@ -20,6 +20,7 @@ describe('crafting capabilities', () => {
     assert.deepEqual(inspectCraftingCapabilities(fixture.bot, 16), {
       craftableItems: [{
         item: 'oak_planks',
+        recipeOutput: 4,
         maxCraftable: 8,
         requiresTable: false
       }],
@@ -48,7 +49,12 @@ describe('crafting capabilities', () => {
     assert.deepEqual(
       inspectCraftingCapabilities(withTable.bot, 16).craftableItems
         .find(entry => entry.item === 'wooden_pickaxe'),
-      { item: 'wooden_pickaxe', maxCraftable: 1, requiresTable: true }
+      {
+        item: 'wooden_pickaxe',
+        recipeOutput: 1,
+        maxCraftable: 1,
+        requiresTable: true
+      }
     )
   })
 })
@@ -67,7 +73,47 @@ describe('craftItem', () => {
 
     assert.equal(result.success, true)
     assert.equal(result.crafted, 4)
+    assert.equal(result.recipeOutput, 4)
+    assert.equal(result.executionCount, 1)
+    assert.equal(result.retryCount, 0)
+    assert.equal(result.retryResult, 'not_needed')
     assert.deepEqual(fixture.craftCalls, [{ item: 'oak_planks', count: 1 }])
+  })
+
+  it('treats amount as desired output count and executes exact output batches', async () => {
+    const fixture = createCraftingBot({ logCount: 2 })
+
+    const result = await craftItem(
+      fixture.bot,
+      createAgentState('Alice'),
+      'oak_planks',
+      8,
+      'autonomous'
+    )
+
+    assert.equal(result.success, true)
+    assert.equal(result.requested, 8)
+    assert.equal(result.crafted, 8)
+    assert.equal(result.recipeOutput, 4)
+    assert.equal(result.executionCount, 2)
+    assert.deepEqual(fixture.craftCalls, [{ item: 'oak_planks', count: 2 }])
+  })
+
+  it('rejects desired output counts that do not align to a recipe batch', async () => {
+    const fixture = createCraftingBot({ logCount: 1 })
+
+    const result = await craftItem(
+      fixture.bot,
+      createAgentState('Alice'),
+      'oak_planks',
+      2,
+      'autonomous'
+    )
+
+    assert.equal(result.success, false)
+    assert.equal(result.reason, 'invalid_output_amount')
+    assert.equal(result.recipeOutput, 4)
+    assert.equal(fixture.craftCalls.length, 0)
   })
 
   it('waits briefly for the authoritative inventory delta to settle', async () => {
@@ -86,6 +132,27 @@ describe('craftItem', () => {
 
     assert.equal(result.success, true)
     assert.equal(result.crafted, 12)
+  })
+
+  it('accepts delayed authoritative confirmation for a table craft', async () => {
+    const fixture = createCraftingBot({
+      includeTableRecipe: true,
+      plankCount: 3,
+      stickCount: 2,
+      tableAvailable: true,
+      confirmationDelayTicks: 3
+    })
+
+    const result = await createTestCraftSkill()(
+      fixture.bot,
+      createAgentState('Alice'),
+      'wooden_pickaxe',
+      1
+    )
+
+    assert.equal(result.success, true)
+    assert.equal(result.retryCount, 0)
+    assert.equal(fixture.craftCalls.length, 1)
   })
 
   it('rejects unknown items and items without recipes', async () => {
@@ -198,6 +265,154 @@ describe('craftItem', () => {
       )).reason,
       'output_not_confirmed'
     )
+    assert.equal(failing.craftCalls.length, 1)
+    assert.equal(noDelta.craftCalls.length, 1)
+  })
+
+  it('retries one unchanged-inventory table synchronization failure safely', async () => {
+    const fixture = createCraftingBot({
+      includeTableRecipe: true,
+      plankCount: 3,
+      stickCount: 2,
+      tableAvailable: true,
+      craftOutcomes: ['no_output', 'success']
+    })
+
+    const result = await createTestCraftSkill()(
+      fixture.bot,
+      createAgentState('Alice'),
+      'wooden_pickaxe',
+      1
+    )
+
+    assert.equal(result.success, true)
+    assert.equal(result.crafted, 1)
+    assert.equal(result.retryCount, 1)
+    assert.equal(result.retryResult, 'succeeded')
+    assert.equal(fixture.craftCalls.length, 2)
+    assert.notEqual(fixture.craftTables[0], fixture.craftTables[1])
+  })
+
+  it('retries a known unchanged window-open timeout once', async () => {
+    const fixture = createCraftingBot({
+      includeTableRecipe: true,
+      plankCount: 3,
+      stickCount: 2,
+      tableAvailable: true,
+      craftOutcomes: ['window_timeout', 'success']
+    })
+
+    const result = await createTestCraftSkill()(
+      fixture.bot,
+      createAgentState('Alice'),
+      'wooden_pickaxe',
+      1
+    )
+
+    assert.equal(result.success, true)
+    assert.equal(result.retryCount, 1)
+    assert.equal(result.retryResult, 'succeeded')
+    assert.equal(fixture.craftCalls.length, 2)
+  })
+
+  it('does not retry an unrelated table craft failure', async () => {
+    const fixture = createCraftingBot({
+      includeTableRecipe: true,
+      plankCount: 3,
+      stickCount: 2,
+      tableAvailable: true,
+      craftError: true
+    })
+
+    const result = await createTestCraftSkill()(
+      fixture.bot,
+      createAgentState('Alice'),
+      'wooden_pickaxe',
+      1
+    )
+
+    assert.equal(result.success, false)
+    assert.equal(result.reason, 'craft_failed')
+    assert.equal(result.retryCount, 0)
+    assert.equal(result.retryResult, 'not_needed')
+    assert.equal(fixture.craftCalls.length, 1)
+  })
+
+  it('fails after one retry without attempting a second retry', async () => {
+    const fixture = createCraftingBot({
+      includeTableRecipe: true,
+      plankCount: 3,
+      stickCount: 2,
+      tableAvailable: true,
+      craftOutcomes: ['no_output', 'no_output', 'success']
+    })
+
+    const result = await createTestCraftSkill()(
+      fixture.bot,
+      createAgentState('Alice'),
+      'wooden_pickaxe',
+      1
+    )
+
+    assert.equal(result.success, false)
+    assert.equal(result.reason, 'output_not_confirmed')
+    assert.equal(result.retryCount, 1)
+    assert.equal(result.retryResult, 'failed')
+    assert.equal(fixture.craftCalls.length, 2)
+  })
+
+  it('never retries cancellation or ambiguous partial inventory mutation', async () => {
+    const state = createAgentState('Alice')
+    const cancelled = createCraftingBot({
+      includeTableRecipe: true,
+      plankCount: 3,
+      stickCount: 2,
+      tableAvailable: true,
+      craftOutcomes: ['no_output'],
+      afterCraftAttempt: () => {
+        state.actionVersion += 1
+      }
+    })
+    const partialIngredient = createCraftingBot({
+      includeTableRecipe: true,
+      plankCount: 3,
+      stickCount: 2,
+      tableAvailable: true,
+      craftOutcomes: ['partial_ingredient']
+    })
+    const partialOutput = createCraftingBot({
+      includeTableRecipe: true,
+      plankCount: 3,
+      stickCount: 2,
+      tableAvailable: true,
+      craftOutcomes: ['partial_output']
+    })
+
+    const cancelledResult = await createTestCraftSkill()(
+      cancelled.bot,
+      state,
+      'wooden_pickaxe',
+      1
+    )
+    const ingredientResult = await createTestCraftSkill()(
+      partialIngredient.bot,
+      createAgentState('Alice'),
+      'wooden_pickaxe',
+      1
+    )
+    const outputResult = await createTestCraftSkill()(
+      partialOutput.bot,
+      createAgentState('Alice'),
+      'wooden_pickaxe',
+      1
+    )
+
+    assert.equal(cancelledResult.reason, 'action_cancelled')
+    assert.equal(ingredientResult.reason, 'inventory_changed')
+    assert.equal(outputResult.reason, 'inventory_changed')
+    assert.equal(cancelled.craftCalls.length, 1)
+    assert.equal(partialIngredient.craftCalls.length, 1)
+    assert.equal(partialOutput.craftCalls.length, 1)
   })
 
   it('rejects a craft whose observed ingredient delta does not match the selected recipe', async () => {
@@ -298,11 +513,20 @@ interface CraftingFixtureOptions {
   suppressOutput?: boolean
   corruptIngredientDelta?: boolean
   confirmationDelayTicks?: number
+  craftOutcomes?: Array<
+    'success' |
+    'no_output' |
+    'window_timeout' |
+    'partial_ingredient' |
+    'partial_output'
+  >
+  afterCraftAttempt?: () => void
 }
 
 function createCraftingBot(options: CraftingFixtureOptions = {}): {
   bot: Bot
   craftCalls: Array<{ item: string; count: number }>
+  craftTables: Array<Block | undefined>
 } {
   const items = [
     item(1, 'oak_log', options.logCount ?? 0),
@@ -325,12 +549,9 @@ function createCraftingBot(options: CraftingFixtureOptions = {}): {
   ])
   const tablePosition = new Vec3(2, 64, 0)
   let tableAvailable = options.tableAvailable ?? false
-  const table = {
-    name: 'crafting_table',
-    position: tablePosition,
-    boundingBox: 'block'
-  } as Block
   const craftCalls: Array<{ item: string; count: number }> = []
+  const craftTables: Array<Block | undefined> = []
+  let liveTable: Block | null = null
   let waitedTicks = 0
   let pendingCraft: (() => void) | null = null
 
@@ -354,9 +575,17 @@ function createCraftingBot(options: CraftingFixtureOptions = {}): {
         .filter(stack => stack.type === type)
         .reduce((total, stack) => total + stack.count, 0)
     },
-    findBlock: () => tableAvailable ? table : null,
+    findBlock: () => {
+      if (!tableAvailable) return null
+      liveTable = {
+        name: 'crafting_table',
+        position: tablePosition,
+        boundingBox: 'block'
+      } as Block
+      return liveTable
+    },
     blockAt: (position: Vec3) => (
-      tableAvailable && position.equals(tablePosition) ? table : null
+      tableAvailable && position.equals(tablePosition) ? liveTable : null
     ),
     recipesAll: (itemType: number, _metadata: number | null, tableAllowed: boolean) => (
       (recipes.get(itemType) ?? []).filter(candidate => (
@@ -385,14 +614,30 @@ function createCraftingBot(options: CraftingFixtureOptions = {}): {
         }
       }
     },
-    craft: async (selected: Recipe, applications: number) => {
+    craft: async (
+      selected: Recipe,
+      applications: number,
+      craftingTable?: Block
+    ) => {
       const outputName = selected.result.id === 2
         ? 'oak_planks'
         : selected.result.id === 3
           ? 'wooden_pickaxe'
           : 'wooden_axe'
       craftCalls.push({ item: outputName, count: applications })
-      if (options.craftError) throw new Error('Crafting window closed')
+      craftTables.push(craftingTable)
+      const outcome = options.craftOutcomes?.[craftCalls.length - 1] ?? (
+        options.craftError
+          ? 'craft_error'
+          : options.suppressOutput
+            ? 'no_output'
+            : 'success'
+      )
+      if (outcome === 'craft_error') throw new Error('Crafting window closed')
+      if (outcome === 'window_timeout') {
+        options.afterCraftAttempt?.()
+        throw new Error('Event windowOpen did not fire within timeout of 20000ms')
+      }
       const applyCraft = () => {
         for (const delta of selected.delta.filter(entry => entry.count < 0)) {
           const ingredient = items.find(stack => stack.type === delta.id)
@@ -410,10 +655,19 @@ function createCraftingBot(options: CraftingFixtureOptions = {}): {
           items.push(item(selected.result.id, outputName, selected.result.count * applications))
         }
       }
-      if (!options.suppressOutput) {
+      if (outcome === 'partial_ingredient') {
+        const delta = selected.delta.find(entry => entry.count < 0)
+        const ingredient = delta
+          ? items.find(stack => stack.type === delta.id)
+          : undefined
+        if (ingredient && delta) ingredient.count += delta.count
+      } else if (outcome === 'partial_output') {
+        items.push(item(selected.result.id, outputName, selected.result.count))
+      } else if (outcome === 'success') {
         if (options.confirmationDelayTicks) pendingCraft = applyCraft
         else applyCraft()
       }
+      options.afterCraftAttempt?.()
     },
     waitForTicks: async () => {
       waitedTicks += 1
@@ -428,7 +682,7 @@ function createCraftingBot(options: CraftingFixtureOptions = {}): {
     }
   } as unknown as Bot
 
-  return { bot, craftCalls }
+  return { bot, craftCalls, craftTables }
 }
 
 function recipe(

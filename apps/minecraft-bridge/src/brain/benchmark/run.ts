@@ -47,6 +47,7 @@ export interface BrainBenchmarkResult {
   policyAccepted: boolean
   action: AgentDecisionAction | null
   reason: string | null
+  decision: AgentDecision | null
   repeated: boolean
   progressProduced: boolean
   noProgress: boolean
@@ -168,6 +169,7 @@ export async function runBrainBenchmark(
           valid: true,
           action: proposedDecision.action,
           reason: proposedDecision.reason,
+          decision: proposedDecision,
           repeated,
           noProgress: true,
           repeatedNoProgress: repeated,
@@ -194,6 +196,7 @@ export async function runBrainBenchmark(
           policyAccepted: false,
           action: decision.action,
           reason: decision.reason,
+          decision,
           repeated,
           progressProduced: false,
           noProgress: true,
@@ -240,6 +243,7 @@ export async function runBrainBenchmark(
         policyAccepted: true,
         action: decision.action,
         reason: decision.reason,
+        decision,
         repeated,
         progressProduced,
         noProgress: !progressProduced,
@@ -340,6 +344,7 @@ function baseResult(
     policyAccepted: false,
     action: null,
     reason: null,
+    decision: null,
     repeated: false,
     progressProduced: false,
     noProgress: false,

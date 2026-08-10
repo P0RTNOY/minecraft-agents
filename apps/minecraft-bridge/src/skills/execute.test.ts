@@ -76,6 +76,10 @@ describe('decision executor', () => {
           target: item,
           requested: amount,
           crafted: amount,
+          recipeOutput: 4,
+          executionCount: 1,
+          retryCount: 1,
+          retryResult: 'succeeded',
           status: 'completed'
         }
       },
@@ -145,6 +149,14 @@ describe('decision executor', () => {
       'place:crafting_table:autonomous',
       'say:Hello!'
     ])
+    assert.deepEqual(results.find(result => result.action === 'craft_item')?.details, {
+      requested: 4,
+      crafted: 4,
+      recipeOutput: 4,
+      executionCount: 1,
+      retryCount: 1,
+      retryResult: 'succeeded'
+    })
   })
 
   it('normalizes skill failures into a structured execution result', async () => {
