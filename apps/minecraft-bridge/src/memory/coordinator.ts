@@ -268,7 +268,7 @@ export class AgentMemoryCoordinator implements AgentMemory {
     perception: PerceptionSnapshot
   ): Promise<void> {
     const current = await this.store.listSemanticFacts(MAX_FACT_SCAN)
-    const observedNames = observedNamesFrom(perception)
+    const observedNames = observedWorldNamesFrom(perception)
     const region = regionForPosition(perception.position)
     for (const fact of current) {
       const reconciled = reconcileFactWithPerception(fact, {
@@ -449,6 +449,14 @@ function observedNamesFrom(perception: PerceptionSnapshot): string[] {
     ...perception.inventory.map(item => item.name),
     ...perception.craftableItems.map(item => item.item),
     ...perception.placeableBlocks.map(item => item.name),
+    ...(perception.nearbyCraftingTable ? ['crafting_table'] : [])
+  ])].sort((left, right) => left.localeCompare(right))
+}
+
+function observedWorldNamesFrom(perception: PerceptionSnapshot): string[] {
+  return [...new Set([
+    ...perception.nearbyBlocks.map(item => item.name),
+    ...perception.nearbyEntities.map(item => item.name),
     ...(perception.nearbyCraftingTable ? ['crafting_table'] : [])
   ])].sort((left, right) => left.localeCompare(right))
 }

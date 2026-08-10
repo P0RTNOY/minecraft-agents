@@ -215,6 +215,31 @@ describe('AgentMemoryCoordinator', () => {
     assert.equal(store.facts[0]?.contradictionCount, 0)
   })
 
+  it('does not treat an inventory item as a fresh world observation', async () => {
+    const store = new MemoryStoreDouble()
+    store.facts.push(fact({
+      subject: 'oak_log',
+      relation: 'resource_observed_near',
+      confidence: 0.8
+    }))
+    const coordinator = new AgentMemoryCoordinator({
+      store,
+      recorder: { observe: () => [] },
+      identity
+    })
+    const carryingLog = brainInput({
+      inventory: [{ name: 'oak_log', count: 1 }],
+      placeableBlocks: [{ name: 'oak_log', count: 1 }]
+    })
+
+    await coordinator.retrieve(carryingLog)
+    await coordinator.retrieve(carryingLog)
+
+    assert.equal(store.facts[0]?.status, 'stale')
+    assert.equal(store.facts[0]?.confidence, 0.4)
+    assert.equal(store.facts[0]?.contradictionCount, 2)
+  })
+
   it('fails closed to empty context and surfaces safe error metrics', async () => {
     const store = new MemoryStoreDouble()
     store.failure = new Error('raw store details must not escape')
