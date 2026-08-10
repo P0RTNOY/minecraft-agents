@@ -7,6 +7,7 @@ import { cancelAgentAction } from '../agent/cancelAction.js'
 import { beginAgentAction, createAgentState } from '../agent/state.js'
 import {
   createOperatorAuthorizer,
+  createTrustedOperatorAuthorizer,
   parseChatCommand,
   registerChatCommands
 } from './chatCommands.js'
@@ -59,6 +60,32 @@ describe('parseChatCommand', () => {
 })
 
 describe('registerChatCommands', () => {
+  it('requires an explicit trusted operator for provider-backed talk commands', async () => {
+    const alice = commandBot('Alice')
+    const state = createAgentState('Alice')
+    const requests: string[] = []
+    const authorize = createOperatorAuthorizer([], ['Alice', 'Bob'])
+    const authorizeTalk = createTrustedOperatorAuthorizer([], ['Alice', 'Bob'])
+    registerChatCommands(alice.bot, state, {
+      isAuthorizedOperator: authorize,
+      isAuthorizedTalkOperator: authorizeTalk,
+      startConversation: async targetAgentId => {
+        requests.push(targetAgentId)
+        return { accepted: true, conversationId: 'conversation-1' }
+      },
+      logger: silentLogger
+    })
+
+    alice.emitChat('Mallory', 'alice stop')
+    alice.emitChat('Mallory', 'alice talk bob')
+    await new Promise(resolve => setImmediate(resolve))
+
+    assert.equal(authorize('Mallory'), true)
+    assert.equal(authorizeTalk('Mallory'), false)
+    assert.equal(state.manualOverrideVersion, 1)
+    assert.deepEqual(requests, [])
+  })
+
   it('routes authorized exact talk commands outside world-action arbitration', async () => {
     const alice = commandBot('Alice')
     const state = createAgentState('Alice')

@@ -37,6 +37,7 @@ export interface ChatCommandLogger {
 export interface RegisterChatCommandOptions {
   arbiter?: ActionArbiter
   isAuthorizedOperator?: (username: string) => boolean
+  isAuthorizedTalkOperator?: (username: string) => boolean
   logger?: ChatCommandLogger
   startConversation?: (
     targetAgentId: string
@@ -101,6 +102,9 @@ export function registerChatCommands(
 ): () => void {
   const arbiter = options.arbiter ?? new ActionArbiter()
   const isAuthorizedOperator = options.isAuthorizedOperator ?? (() => true)
+  const isAuthorizedTalkOperator = options.isAuthorizedTalkOperator ?? (
+    options.isAuthorizedOperator ?? (() => true)
+  )
   const logger = options.logger ?? console
   const onChat = (username: string, message: string) => {
     if (
@@ -110,6 +114,7 @@ export function registerChatCommands(
 
     const command = parseChatCommand(message, state.agentName)
     if (!command) return
+    if (command.type === 'talk' && !isAuthorizedTalkOperator(username)) return
     logger.log(`💬 ${username}: ${message}`)
 
     markManualOverride(state)
@@ -172,13 +177,37 @@ export function createOperatorAuthorizer(
   operatorUsernames: readonly string[],
   agentUsernames: readonly string[]
 ): (username: string) => boolean {
+  return createOperatorAuthorizerWithPolicy(
+    operatorUsernames,
+    agentUsernames,
+    true
+  )
+}
+
+export function createTrustedOperatorAuthorizer(
+  operatorUsernames: readonly string[],
+  agentUsernames: readonly string[]
+): (username: string) => boolean {
+  return createOperatorAuthorizerWithPolicy(
+    operatorUsernames,
+    agentUsernames,
+    false
+  )
+}
+
+function createOperatorAuthorizerWithPolicy(
+  operatorUsernames: readonly string[],
+  agentUsernames: readonly string[],
+  allowExternalWhenUnconfigured: boolean
+): (username: string) => boolean {
   const operators = normalizedNames(operatorUsernames)
   const agents = normalizedNames(agentUsernames)
   return username => {
     if (!PLAYER_USERNAME.test(username)) return false
     const normalized = username.toLowerCase()
     return !agents.has(normalized) && (
-      operators.size === 0 || operators.has(normalized)
+      (allowExternalWhenUnconfigured && operators.size === 0) ||
+      operators.has(normalized)
     )
   }
 }

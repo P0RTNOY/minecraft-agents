@@ -9,6 +9,7 @@ import { createLLMProvider } from '../brain/providers/index.js'
 import { visibleExternalPlayers } from '../brain/semantics.js'
 import {
   createOperatorAuthorizer,
+  createTrustedOperatorAuthorizer,
   registerChatCommands
 } from '../commands/chatCommands.js'
 import { MemoryReflector } from '../memory/reflection.js'
@@ -77,6 +78,10 @@ export async function createProductionComposition(
       })
     : null
   const isAuthorizedOperator = createOperatorAuthorizer(
+    agentConfiguration.operatorUsernames,
+    agentConfiguration.configuredAgentUsernames
+  )
+  const isAuthorizedTalkOperator = createTrustedOperatorAuthorizer(
     agentConfiguration.operatorUsernames,
     agentConfiguration.configuredAgentUsernames
   )
@@ -180,6 +185,7 @@ export async function createProductionComposition(
       {
         arbiter: context.arbiter,
         isAuthorizedOperator,
+        isAuthorizedTalkOperator,
         startConversation: context.startConversation,
         onManualActivity: context.onManualActivity,
         logger: context.logger
