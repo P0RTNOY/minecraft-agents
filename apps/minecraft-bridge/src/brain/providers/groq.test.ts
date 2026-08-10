@@ -64,9 +64,11 @@ describe('GroqProvider', () => {
           choices: [{
             message: {
               content: JSON.stringify({
-                action: 'collect_block',
-                block: 'oak_log',
-                reason: 'Gather useful resources.'
+                decision: {
+                  action: 'collect_block',
+                  block: 'oak_log',
+                  reason: 'Gather useful resources.'
+                }
               }),
               reasoning: 'private reasoning must not be consumed'
             }
@@ -112,7 +114,17 @@ describe('GroqProvider', () => {
     assert.equal(responseFormat.type, 'json_schema')
     assert.equal(responseFormat.json_schema.name, 'agent_decision')
     assert.equal(responseFormat.json_schema.strict, true)
-    assert.equal(Array.isArray(responseFormat.json_schema.schema.anyOf), true)
+    assert.equal(responseFormat.json_schema.schema.type, 'object')
+    assert.deepEqual(responseFormat.json_schema.schema.required, ['decision'])
+    assert.equal(
+      responseFormat.json_schema.schema.additionalProperties,
+      false
+    )
+    assert.equal(Array.isArray(
+      (responseFormat.json_schema.schema.properties as {
+        decision: { anyOf: unknown[] }
+      }).decision.anyOf
+    ), true)
     assert.deepEqual(provider.getLastTiming(), {
       promptTokens: 312,
       outputTokens: 27
@@ -127,7 +139,9 @@ describe('GroqProvider', () => {
       fetchImpl: async () => new Response(JSON.stringify({
         choices: [{
           message: {
-            content: JSON.stringify({ action: 'idle', reason: 'Wait.' })
+            content: JSON.stringify({
+              decision: { action: 'idle', reason: 'Wait.' }
+            })
           }
         }]
       }))
@@ -201,6 +215,18 @@ describe('GroqProvider', () => {
         choices: [{ message: { content: 'not JSON' } }]
       }))
     })
+    const missingDecision = new GroqProvider({
+      baseUrl: 'https://api.groq.com/openai/v1',
+      apiKey: 'test-api-key',
+      model: 'openai/gpt-oss-20b',
+      fetchImpl: async () => new Response(JSON.stringify({
+        choices: [{
+          message: {
+            content: JSON.stringify({ action: 'idle', reason: 'Wait.' })
+          }
+        }]
+      }))
+    })
 
     await assert.rejects(
       malformedEnvelope.decide(brainInput),
@@ -209,6 +235,10 @@ describe('GroqProvider', () => {
     await assert.rejects(
       invalidModelJson.decide(brainInput),
       /invalid JSON/
+    )
+    await assert.rejects(
+      missingDecision.decide(brainInput),
+      /missing the decision object/
     )
   })
 })

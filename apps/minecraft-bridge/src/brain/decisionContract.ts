@@ -101,7 +101,7 @@ function craftingDecisionSchema() {
   return {
     type: 'object',
     properties: {
-      action: { const: 'craft_item' },
+      action: { type: 'string', const: 'craft_item' },
       item: {
         type: 'string',
         minLength: 1,
@@ -119,7 +119,7 @@ function simpleDecisionSchema(action: 'idle' | 'scan' | 'explore' | 'stop') {
   return {
     type: 'object',
     properties: {
-      action: { const: action },
+      action: { type: 'string', const: action },
       reason: { type: 'string', minLength: 1, maxLength: MAX_REASON_LENGTH }
     },
     required: ['action', 'reason'],
@@ -135,7 +135,7 @@ function targetedDecisionSchema(
   return {
     type: 'object',
     properties: {
-      action: { const: action },
+      action: { type: 'string', const: action },
       reason: { type: 'string', minLength: 1, maxLength: MAX_REASON_LENGTH },
       [targetField]: { type: 'string', minLength: 1, maxLength }
     },

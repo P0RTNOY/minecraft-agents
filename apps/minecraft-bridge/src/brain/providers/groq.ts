@@ -14,6 +14,15 @@ export interface GroqProviderOptions {
   requestTimeoutMs?: number
 }
 
+const GROQ_DECISION_SCHEMA = {
+  type: 'object',
+  properties: {
+    decision: DECISION_JSON_SCHEMA
+  },
+  required: ['decision'],
+  additionalProperties: false
+} as const
+
 export class GroqProvider implements LLMProvider {
   private readonly endpoint: string
   private readonly apiKey: string
@@ -58,7 +67,7 @@ export class GroqProvider implements LLMProvider {
           json_schema: {
             name: 'agent_decision',
             strict: true,
-            schema: DECISION_JSON_SCHEMA
+            schema: GROQ_DECISION_SCHEMA
           }
         }
       }),
@@ -79,11 +88,18 @@ export class GroqProvider implements LLMProvider {
     this.lastTiming = readUsageTiming(envelope)
     const content = readMessageContent(envelope)
 
+    let parsed: unknown
     try {
-      return JSON.parse(content) as unknown
+      parsed = JSON.parse(content) as unknown
     } catch {
       throw new Error('Groq model response contained invalid JSON.')
     }
+
+    if (!isRecord(parsed) || !('decision' in parsed)) {
+      throw new Error('Groq response is missing the decision object.')
+    }
+
+    return parsed.decision
   }
 
   getLastTiming(): LLMRequestTiming | null {

@@ -57,7 +57,7 @@ export class OpenAIProvider implements LLMProvider {
         input: JSON.stringify(serializeBrainInput(input)),
         store: false,
         reasoning: { effort: 'low' },
-        max_output_tokens: 128,
+        max_output_tokens: 512,
         text: {
           format: {
             type: 'json_schema',

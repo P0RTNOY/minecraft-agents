@@ -104,7 +104,7 @@ describe('OpenAIProvider', () => {
     assert.equal(typeof requestedBody.instructions, 'string')
     assert.equal(typeof requestedBody.input, 'string')
     assert.equal(requestedBody.store, false)
-    assert.equal(requestedBody.max_output_tokens, 128)
+    assert.equal(requestedBody.max_output_tokens, 512)
     assert.deepEqual(requestedBody.reasoning, { effort: 'low' })
     assert.equal('tools' in requestedBody, false)
     assert.equal('previous_response_id' in requestedBody, false)
@@ -132,6 +132,16 @@ describe('OpenAIProvider', () => {
     assert.equal(Array.isArray(
       text.format.schema.properties.decision.anyOf
     ), true)
+    for (const branch of text.format.schema.properties.decision.anyOf) {
+      assert.deepEqual(
+        (branch as { properties?: { action?: unknown } }).properties?.action,
+        {
+          type: 'string',
+          const: (branch as { properties: { action: { const: string } } })
+            .properties.action.const
+        }
+      )
+    }
     assert.deepEqual(provider.getLastTiming(), {
       promptTokens: 312,
       outputTokens: 27
