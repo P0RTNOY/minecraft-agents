@@ -67,6 +67,7 @@ export type CraftSkill = (
 ) => Promise<CraftResult>
 
 const DEFAULT_CRAFTING_TABLE_RADIUS = 16
+const MAX_CRAFT_CONFIRMATION_TICKS = 10
 
 const defaultNavigator: CraftNavigator = {
   prepare(bot) {
@@ -252,8 +253,19 @@ async function craftItemWith(
       })
     }
 
-    await bot.waitForTicks(1)
-    const inventoryAfterCraft = snapshotInventoryCounts(bot.inventory.items())
+    let inventoryAfterCraft = snapshotInventoryCounts(bot.inventory.items())
+    for (let tick = 0; tick < MAX_CRAFT_CONFIRMATION_TICKS; tick += 1) {
+      await bot.waitForTicks(1)
+      inventoryAfterCraft = snapshotInventoryCounts(bot.inventory.items())
+      if (matchesRecipeDelta(
+        inventoryBeforeCraft,
+        inventoryAfterCraft,
+        recipe,
+        applications
+      )) break
+
+      if (state.actionVersion !== actionVersion) break
+    }
     const crafted = Math.max(
       0,
       countItemStacks(inventoryAfterCraft, registryItem.id, null) - initialCount

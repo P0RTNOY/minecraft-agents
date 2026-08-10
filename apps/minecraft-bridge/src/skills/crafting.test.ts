@@ -70,6 +70,24 @@ describe('craftItem', () => {
     assert.deepEqual(fixture.craftCalls, [{ item: 'oak_planks', count: 1 }])
   })
 
+  it('waits briefly for the authoritative inventory delta to settle', async () => {
+    const fixture = createCraftingBot({
+      logCount: 3,
+      confirmationDelayTicks: 3
+    })
+
+    const result = await craftItem(
+      fixture.bot,
+      createAgentState('Alice'),
+      'oak_planks',
+      12,
+      'autonomous'
+    )
+
+    assert.equal(result.success, true)
+    assert.equal(result.crafted, 12)
+  })
+
   it('rejects unknown items and items without recipes', async () => {
     const fixture = createCraftingBot()
     const state = createAgentState('Alice')
@@ -279,6 +297,7 @@ interface CraftingFixtureOptions {
   craftError?: boolean
   suppressOutput?: boolean
   corruptIngredientDelta?: boolean
+  confirmationDelayTicks?: number
 }
 
 function createCraftingBot(options: CraftingFixtureOptions = {}): {
@@ -312,6 +331,8 @@ function createCraftingBot(options: CraftingFixtureOptions = {}): {
     boundingBox: 'block'
   } as Block
   const craftCalls: Array<{ item: string; count: number }> = []
+  let waitedTicks = 0
+  let pendingCraft: (() => void) | null = null
 
   const bot = {
     username: 'Alice',
@@ -372,7 +393,7 @@ function createCraftingBot(options: CraftingFixtureOptions = {}): {
           : 'wooden_axe'
       craftCalls.push({ item: outputName, count: applications })
       if (options.craftError) throw new Error('Crafting window closed')
-      if (!options.suppressOutput) {
+      const applyCraft = () => {
         for (const delta of selected.delta.filter(entry => entry.count < 0)) {
           const ingredient = items.find(stack => stack.type === delta.id)
           if (ingredient) {
@@ -389,8 +410,22 @@ function createCraftingBot(options: CraftingFixtureOptions = {}): {
           items.push(item(selected.result.id, outputName, selected.result.count * applications))
         }
       }
+      if (!options.suppressOutput) {
+        if (options.confirmationDelayTicks) pendingCraft = applyCraft
+        else applyCraft()
+      }
     },
-    waitForTicks: async () => {}
+    waitForTicks: async () => {
+      waitedTicks += 1
+      if (
+        pendingCraft &&
+        waitedTicks >= (options.confirmationDelayTicks ?? 0)
+      ) {
+        const applyCraft = pendingCraft
+        pendingCraft = null
+        applyCraft()
+      }
+    }
   } as unknown as Bot
 
   return { bot, craftCalls }
