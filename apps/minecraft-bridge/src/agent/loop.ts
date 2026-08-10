@@ -4,6 +4,7 @@ import { ActionArbiter } from './actionArbiter.js'
 import { cancelAgentAction } from './cancelAction.js'
 import type { AgentState } from './state.js'
 import type { LLMProvider } from '../brain/provider.js'
+import { ShortTermGoalManager } from '../brain/goals.js'
 import {
   appendRecentDecision,
   assessRepetition,
@@ -46,6 +47,7 @@ export interface AgentLoopOptions {
     context?: DecisionValidationContext
   ) => DecisionValidationResult
   logger?: AgentLoopLogger
+  goalManager?: Pick<ShortTermGoalManager, 'update'>
 }
 
 export type BrainCycleResult =
@@ -86,6 +88,7 @@ export class AutonomousAgentLoop {
     context?: DecisionValidationContext
   ) => DecisionValidationResult
   private readonly logger: AgentLoopLogger
+  private readonly goalManager: Pick<ShortTermGoalManager, 'update'>
 
   private running = false
   private cycleInProgress = false
@@ -107,6 +110,7 @@ export class AutonomousAgentLoop {
     this.execute = options.execute ?? executeDecision
     this.validate = options.validate ?? validateDecision
     this.logger = options.logger ?? console
+    this.goalManager = options.goalManager ?? new ShortTermGoalManager()
   }
 
   start(): void {
@@ -153,6 +157,7 @@ export class AutonomousAgentLoop {
         return { status: 'observation_failed', error: message }
       }
 
+      const goalSnapshot = this.goalManager.update(perception)
       const input: BrainInput = {
         perception,
         state: {
@@ -164,7 +169,26 @@ export class AutonomousAgentLoop {
           busy: this.state.busy
         },
         previousActionResult: this.previousActionResult,
-        recentDecisions: this.recentDecisions
+        recentDecisions: this.recentDecisions,
+        shortTermGoal: goalSnapshot.shortTermGoal,
+        goalProgress: goalSnapshot.goalProgress,
+        availableCapabilities: goalSnapshot.availableCapabilities
+      }
+
+      if (goalSnapshot.transition?.completedGoal) {
+        this.logger.log(
+          `🎯 Goal completed: ${goalSnapshot.transition.completedGoal.type}`
+        )
+      }
+      if (goalSnapshot.transition?.abandonedGoal) {
+        this.logger.log(
+          `🎯 Goal abandoned: ${goalSnapshot.transition.abandonedGoal.type}`
+        )
+      }
+      if (goalSnapshot.shortTermGoal && goalSnapshot.goalProgress) {
+        this.logger.log(
+          `🎯 Goal: ${goalSnapshot.shortTermGoal.type} | progress ${formatGoalProgress(goalSnapshot.goalProgress)}`
+        )
       }
 
       let providerOutput: unknown
@@ -284,4 +308,17 @@ function formatDecision(decision: AgentDecision): string {
 
 function formatError(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
+}
+
+function formatGoalProgress(
+  progress: NonNullable<BrainInput['goalProgress']>
+): string {
+  return [
+    `wood=${progress.hasWood}`,
+    `planks=${progress.hasPlanks}`,
+    `table_item=${progress.hasCraftingTableItem}`,
+    `crafting_access=${progress.hasCraftingAccess}`,
+    `basic_tool=${progress.hasBasicTool}`,
+    `complete=${progress.completed}`
+  ].join(',')
 }

@@ -4,6 +4,11 @@ import type {
   AgentStatus
 } from '../agent/state.js'
 import type { PerceptionSnapshot } from '../perception/types.js'
+import type {
+  AvailableCapabilities,
+  GoalProgress,
+  ShortTermGoal
+} from './goals.js'
 
 interface DecisionBase {
   reason: string
@@ -51,4 +56,7 @@ export interface BrainInput {
   state: BrainStateSnapshot
   previousActionResult: DecisionExecutionResult | null
   recentDecisions: readonly RecentDecision[]
+  shortTermGoal: ShortTermGoal | null
+  goalProgress: GoalProgress | null
+  availableCapabilities: AvailableCapabilities
 }

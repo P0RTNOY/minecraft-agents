@@ -8,7 +8,7 @@ import {
   markManualOverride
 } from './state.js'
 import { ActionArbiter } from './actionArbiter.js'
-import type { AgentDecision } from '../brain/types.js'
+import type { AgentDecision, BrainInput } from '../brain/types.js'
 import type { LLMProvider } from '../brain/provider.js'
 import {
   AutonomousAgentLoop,
@@ -18,6 +18,102 @@ import {
 const fakeBot = {} as Bot
 
 describe('AutonomousAgentLoop', () => {
+  it('provides current goal progress and grounded capabilities to the Brain', async () => {
+    const observedInputs: BrainInput[] = []
+    const loop = createLoop({
+      provider: {
+        decide: async input => {
+          observedInputs.push(input)
+          return { action: 'idle', reason: 'Wait.' }
+        }
+      },
+      observe: () => ({
+        agent: 'Alice',
+        timestamp: 1,
+        position: { x: 0, y: 64, z: 0 },
+        health: 20,
+        food: 20,
+        nearbyBlocks: [{
+          name: 'oak_log',
+          distance: 3,
+          position: { x: 3, y: 64, z: 0 }
+        }],
+        nearbyEntities: [],
+        inventory: [{ name: 'oak_log', count: 1 }],
+        edibleItemCount: 0,
+        craftableItems: [{
+          item: 'oak_planks',
+          maxCraftable: 4,
+          requiresTable: false
+        }],
+        nearbyCraftingTable: false,
+        equippedItem: null,
+        placeableBlocks: []
+      })
+    })
+
+    await loop.runCycle()
+    const observedInput = observedInputs[0]
+
+    assert.ok(observedInput)
+    assert.equal(
+      observedInput?.shortTermGoal?.type,
+      'establish_basic_resources'
+    )
+    assert.equal(observedInput?.goalProgress?.hasWood, true)
+    assert.deepEqual(observedInput?.availableCapabilities, {
+      observedCollectableBlocks: ['oak_log'],
+      craftableItems: [{
+        item: 'oak_planks',
+        maxCraftable: 4,
+        requiresTable: false
+      }],
+      placeableBlocks: [],
+      canExplore: true
+    })
+  })
+
+  it('withholds an advisory goal from the Brain during an emergency', async () => {
+    const observedInputs: BrainInput[] = []
+    const loop = createLoop({
+      provider: {
+        decide: async input => {
+          observedInputs.push(input)
+          return { action: 'idle', reason: 'Wait.' }
+        }
+      },
+      observe: () => ({
+        agent: 'Alice',
+        timestamp: 1,
+        position: { x: 0, y: 64, z: 0 },
+        health: 20,
+        food: 20,
+        nearbyBlocks: [],
+        nearbyEntities: [{
+          id: 9,
+          name: 'creeper',
+          type: 'mob',
+          category: 'Hostile mobs',
+          distance: 3,
+          position: { x: 3, y: 64, z: 0 }
+        }],
+        inventory: [],
+        edibleItemCount: 0,
+        craftableItems: [],
+        nearbyCraftingTable: false,
+        equippedItem: null,
+        placeableBlocks: []
+      })
+    })
+
+    await loop.runCycle()
+    const observedInput = observedInputs[0]
+
+    assert.ok(observedInput)
+    assert.equal(observedInput?.shortTermGoal, null)
+    assert.equal(observedInput?.goalProgress, null)
+  })
+
   it('does not execute invalid provider output', async () => {
     let executions = 0
     const loop = createLoop({

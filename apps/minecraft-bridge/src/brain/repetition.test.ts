@@ -39,7 +39,20 @@ const baseInput: BrainInput = {
     busy: false
   },
   previousActionResult: null,
-  recentDecisions: []
+  recentDecisions: [],
+  shortTermGoal: {
+    id: 'goal-1',
+    type: 'explore_for_resources',
+    description: 'Find useful resources for further progress.',
+    status: 'active'
+  },
+  goalProgress: progress(),
+  availableCapabilities: {
+    observedCollectableBlocks: [],
+    craftableItems: [],
+    placeableBlocks: [],
+    canExplore: true
+  }
 }
 
 describe('assessRepetition', () => {
@@ -88,6 +101,21 @@ describe('assessRepetition', () => {
 
     assert.deepEqual(
       assessRepetition({ action: 'idle', reason: 'Pause safely.' }, changedInput),
+      { allowed: true }
+    )
+  })
+
+  it('permits a repeated decision after meaningful goal progress changes', () => {
+    const first = record({ action: 'idle', reason: 'Wait.' }, baseInput)
+    const second = record({ action: 'idle', reason: 'Still wait.' }, baseInput)
+    const changedInput: BrainInput = {
+      ...baseInput,
+      goalProgress: progress({ hasWood: true }),
+      recentDecisions: [first, second]
+    }
+
+    assert.deepEqual(
+      assessRepetition({ action: 'idle', reason: 'Reassess.' }, changedInput),
       { allowed: true }
     )
   })
@@ -189,5 +217,22 @@ function resultFor(decision: AgentDecision): DecisionExecutionResult {
     action: decision.action,
     status: 'completed',
     summary: `${decision.action} completed.`
+  }
+}
+
+function progress(overrides: Partial<BrainInput['goalProgress']> = {}) {
+  return {
+    goalType: 'explore_for_resources' as const,
+    hasWood: false,
+    hasPlanks: false,
+    hasCraftingTableItem: false,
+    hasCraftingAccess: false,
+    hasBasicTool: false,
+    hasImprovedTool: false,
+    hasSafeFood: false,
+    survivalReady: true,
+    usefulResourcesNearby: false,
+    completed: false,
+    ...overrides
   }
 }

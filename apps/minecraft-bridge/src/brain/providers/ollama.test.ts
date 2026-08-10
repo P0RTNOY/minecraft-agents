@@ -32,7 +32,15 @@ const brainInput: BrainInput = {
     busy: false
   },
   previousActionResult: null,
-  recentDecisions: []
+  recentDecisions: [],
+  shortTermGoal: null,
+  goalProgress: null,
+  availableCapabilities: {
+    observedCollectableBlocks: ['oak_log'],
+    craftableItems: [],
+    placeableBlocks: [],
+    canExplore: true
+  }
 }
 
 describe('OllamaProvider', () => {

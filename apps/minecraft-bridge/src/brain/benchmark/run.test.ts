@@ -34,7 +34,15 @@ const baseInput: BrainInput = {
     busy: false
   },
   previousActionResult: null,
-  recentDecisions: []
+  recentDecisions: [],
+  shortTermGoal: null,
+  goalProgress: null,
+  availableCapabilities: {
+    observedCollectableBlocks: [],
+    craftableItems: [],
+    placeableBlocks: [],
+    canExplore: true
+  }
 }
 
 describe('runBrainBenchmark', () => {

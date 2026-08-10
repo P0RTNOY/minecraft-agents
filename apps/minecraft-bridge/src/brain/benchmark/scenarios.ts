@@ -1,5 +1,6 @@
 import type { BrainInput, DecisionExecutionResult } from '../types.js'
 import type { BrainBenchmarkScenario } from './run.js'
+import { ShortTermGoalManager } from '../goals.js'
 
 const position = { x: 0, y: 64, z: 0 }
 
@@ -89,25 +90,28 @@ function scenario(
   description: string,
   overrides: ScenarioOverrides
 ) {
+  const perception: BrainInput['perception'] = {
+    agent: 'Alice',
+    timestamp: 0,
+    position,
+    health: overrides.health ?? 20,
+    food: overrides.food ?? 20,
+    nearbyBlocks: overrides.nearbyBlocks ?? [],
+    nearbyEntities: overrides.nearbyEntities ?? [],
+    inventory: overrides.inventory ?? [],
+    edibleItemCount: overrides.edibleItemCount ?? 0,
+    craftableItems: overrides.craftableItems ?? [],
+    nearbyCraftingTable: overrides.nearbyCraftingTable ?? false,
+    equippedItem: null,
+    placeableBlocks: []
+  }
+  const goalSnapshot = new ShortTermGoalManager().update(perception)
+
   return {
     id,
     description,
     input: {
-      perception: {
-        agent: 'Alice',
-        timestamp: 0,
-        position,
-        health: overrides.health ?? 20,
-        food: overrides.food ?? 20,
-        nearbyBlocks: overrides.nearbyBlocks ?? [],
-        nearbyEntities: overrides.nearbyEntities ?? [],
-        inventory: overrides.inventory ?? [],
-        edibleItemCount: overrides.edibleItemCount ?? 0,
-        craftableItems: overrides.craftableItems ?? [],
-        nearbyCraftingTable: overrides.nearbyCraftingTable ?? false,
-        equippedItem: null,
-        placeableBlocks: []
-      },
+      perception,
       state: {
         agentName: 'Alice',
         status: 'idle',
@@ -117,7 +121,10 @@ function scenario(
         busy: false
       },
       previousActionResult: overrides.previousActionResult ?? null,
-      recentDecisions: []
+      recentDecisions: [],
+      shortTermGoal: goalSnapshot.shortTermGoal,
+      goalProgress: goalSnapshot.goalProgress,
+      availableCapabilities: goalSnapshot.availableCapabilities
     } satisfies BrainInput
   }
 }

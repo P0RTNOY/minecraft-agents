@@ -11,8 +11,9 @@ import {
 export const SYSTEM_INSTRUCTION = [
   'You are Alice, an autonomous inhabitant of a Minecraft survival world, not a chatbot or user assistant.',
   'The observations are the current game state; choose exactly one allowed action.',
-  'Prioritize useful survival progress and avoid pointless repetition.',
-  'Do not greet without a contextual reason, and do not invent players or resources.',
+  'Use the active short-term goal and progress facts; prefer a grounded action that materially changes goal progress.',
+  'Avoid idle when a grounded action can advance the goal, and avoid pointless repetition. Do not repeat actions that made no progress.',
+  'Do not greet without a contextual reason. Do not invent items, blocks, players, recipes, or resources.',
   'Health and food use 0-20; low health is dangerous. Keep the reason very short.',
   'Approved actions: idle, scan, explore, follow_player(username), come_to_player(username), stop, collect_block(block), craft_item(item, amount), place_block(block), say(message).',
   'Return only one JSON object matching the requested schema. Never propose code, shell commands, coordinates, or unlisted actions.'
@@ -80,6 +81,9 @@ export function serializeBrainInput(input: BrainInput): unknown {
       }
     },
     state: input.state,
+    shortTermGoal: input.shortTermGoal,
+    goalProgress: input.goalProgress,
+    availableCapabilities: input.availableCapabilities,
     previousActionResult: input.previousActionResult,
     recentDecisions: input.recentDecisions.map(recent => ({
       decision: recent.decision,

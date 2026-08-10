@@ -83,7 +83,19 @@ const input: BrainInput = {
     busy: false
   },
   previousActionResult: null,
-  recentDecisions: []
+  recentDecisions: [],
+  shortTermGoal: null,
+  goalProgress: null,
+  availableCapabilities: {
+    observedCollectableBlocks: ['bamboo', 'dirt', 'grass_block'],
+    craftableItems: [{
+      item: 'oak_planks',
+      maxCraftable: 8,
+      requiresTable: false
+    }],
+    placeableBlocks: [{ name: 'crafting_table', count: 1 }],
+    canExplore: true
+  }
 }
 
 describe('buildBrainSemantics', () => {

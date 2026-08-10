@@ -113,6 +113,13 @@ export function fingerprintBrainState(input: BrainInput): string {
     placeableBlocks: input.perception.placeableBlocks
       .map(item => ({ name: item.name, count: item.count }))
       .sort((left, right) => left.name.localeCompare(right.name)),
+    shortTermGoal: input.shortTermGoal
+      ? {
+          type: input.shortTermGoal.type,
+          status: input.shortTermGoal.status
+        }
+      : null,
+    goalProgress: input.goalProgress,
     state: input.state
   })
 }

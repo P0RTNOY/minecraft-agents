@@ -43,7 +43,32 @@ const input: BrainInput = {
       summary: 'Scan completed.'
     },
     worldStateFingerprint: 'internal-only'
-  }]
+  }],
+  shortTermGoal: {
+    id: 'goal-1',
+    type: 'establish_basic_resources',
+    description: 'Establish basic crafting capability.',
+    status: 'active'
+  },
+  goalProgress: {
+    goalType: 'establish_basic_resources',
+    hasWood: true,
+    hasPlanks: false,
+    hasCraftingTableItem: false,
+    hasCraftingAccess: false,
+    hasBasicTool: false,
+    hasImprovedTool: false,
+    hasSafeFood: false,
+    survivalReady: true,
+    usefulResourcesNearby: false,
+    completed: false
+  },
+  availableCapabilities: {
+    observedCollectableBlocks: [],
+    craftableItems: [],
+    placeableBlocks: [],
+    canExplore: true
+  }
 }
 
 describe('Brain decision contract', () => {
@@ -60,6 +85,13 @@ describe('Brain decision contract', () => {
     assert.match(prompt, /health.*food.*0.?20/)
     assert.match(prompt, /low health.*dangerous/)
     assert.match(prompt, /reason.*very short/)
+    assert.match(prompt, /active short-term goal/)
+    assert.match(prompt, /change.*goal progress/)
+    assert.match(prompt, /avoid idle.*grounded action/i)
+    assert.match(prompt, /do not (invent|fabricate).*items.*blocks.*players.*recipes/i)
+    assert.match(prompt, /do not repeat.*no progress/i)
+    assert.doesNotMatch(prompt, /log.*plank.*crafting table.*tool/i)
+    assert.doesNotMatch(prompt, /if you have (a )?log/i)
     assert.ok(SYSTEM_INSTRUCTION.length < 1_200)
     assert.equal(MAX_REASON_LENGTH, 160)
   })
@@ -79,6 +111,21 @@ describe('Brain decision contract', () => {
       }
     }])
     assert.doesNotMatch(json, /internal-only/)
+  })
+
+  it('exposes compact application-owned goal progress and capabilities', () => {
+    const serialized = serializeBrainInput(input) as {
+      shortTermGoal: unknown
+      goalProgress: unknown
+      availableCapabilities: unknown
+    }
+
+    assert.deepEqual(serialized.shortTermGoal, input.shortTermGoal)
+    assert.deepEqual(serialized.goalProgress, input.goalProgress)
+    assert.deepEqual(
+      serialized.availableCapabilities,
+      input.availableCapabilities
+    )
   })
 
   it('keeps survival actions out of the deliberate Brain vocabulary', () => {
