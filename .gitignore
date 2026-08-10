@@ -7,6 +7,7 @@
 # Node
 node_modules/
 dist/
+apps/minecraft-bridge/data/memory/
 
 # Minecraft server runtime
 minecraft/server/paper.jar
