@@ -42,6 +42,7 @@ export interface BootstrapRunResult {
   outputTokens: number
   llmLatenciesMs: number[]
   actionCounts: Record<string, number>
+  skillFailureReasons: Record<string, number>
   failureReason: BootstrapFailureReason | null
   finalProgress: GoalProgress | null
   finalInventory: InventoryItemSnapshot[]
@@ -91,6 +92,7 @@ export class BootstrapRunTelemetry {
   private reflexes = 0
   private manualOverrides = 0
   private readonly actionCounts: Record<string, number> = {}
+  private readonly skillFailureReasons: Record<string, number> = {}
 
   constructor(identity: Pick<BootstrapRunResult, 'runId' | 'provider' | 'model' | 'startedAt'>) {
     this.identity = identity
@@ -124,15 +126,14 @@ export class BootstrapRunTelemetry {
         this.noProgressCount += 1
       }
       if (!cycle.result.success) {
-        this.skillFailures += 1
-        if (cycle.result.action === 'craft_item') this.craftFailures += 1
+        this.recordSkillFailure(cycle.result)
         this.noteFailure(classifyExecutionFailure(cycle))
       }
       return
     }
 
     if (cycle.status === 'execution_failed') {
-      this.skillFailures += 1
+      this.recordSkillFailure(cycle.result)
       this.noteFailure(classifyResultDetails(cycle.result))
     } else if (cycle.status === 'provider_failed') {
       this.providerErrors += 1
@@ -198,6 +199,7 @@ export class BootstrapRunTelemetry {
       outputTokens: this.outputTokens,
       llmLatenciesMs: [...this.llmLatenciesMs],
       actionCounts: { ...this.actionCounts },
+      skillFailureReasons: { ...this.skillFailureReasons },
       failureReason,
       finalProgress: options.finalProgress ? { ...options.finalProgress } : null,
       finalInventory: options.finalInventory.map(item => ({ ...item }))
@@ -206,6 +208,19 @@ export class BootstrapRunTelemetry {
 
   private noteFailure(reason: BootstrapFailureReason): void {
     this.firstFailure ??= reason
+  }
+
+  private recordSkillFailure(result: {
+    action: string
+    details?: Record<string, unknown>
+  }): void {
+    this.skillFailures += 1
+    if (result.action === 'craft_item') this.craftFailures += 1
+    const reason = typeof result.details?.reason === 'string'
+      ? result.details.reason
+      : 'unknown'
+    const key = `${result.action}:${reason}`
+    this.skillFailureReasons[key] = (this.skillFailureReasons[key] ?? 0) + 1
   }
 }
 

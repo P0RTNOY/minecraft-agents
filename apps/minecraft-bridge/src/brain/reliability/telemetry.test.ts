@@ -46,6 +46,9 @@ describe('BootstrapRunTelemetry', () => {
     assert.equal(result.noProgressCount, 1)
     assert.equal(result.skillFailures, 1)
     assert.deepEqual(result.actionCounts, { craft_item: 2 })
+    assert.deepEqual(result.skillFailureReasons, {
+      'craft_item:inventory_changed': 1
+    })
     assert.equal(result.goalCompleted, true)
     assert.equal(result.success, true)
   })
