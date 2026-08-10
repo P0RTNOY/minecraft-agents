@@ -62,26 +62,27 @@ Each run started from the unchanged verified three-oak-log state. The harness cr
 
 | Run | Success | Time | Decisions | Progress / no progress | Skill failures | Input / output tokens | Episodes created / retrieved | Facts created / retrieved | Est. memory prompt tokens | Failure |
 | ---: | :---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
-| 1 | yes | 39.537 s | 8 | 8 / 0 | 0 | 12,155 / 1,716 | 5 / 20 | 2 / 12 | 1,120 | — |
-| 2 | yes | 36.691 s | 8 | 8 / 0 | 0 | 12,272 / 1,455 | 5 / 19 | 2 / 11 | 1,051 | — |
-| 3 | yes | 32.152 s | 8 | 8 / 0 | 1 craft | 12,187 / 1,497 | 4 / 18 | 2 / 12 | 1,058 | — |
-| 4 | yes | 50.965 s | 10 | 10 / 0 | 1 craft | 15,578 / 1,855 | 4 / 24 | 2 / 16 | 1,406 | — |
-| 5 | no | 150.174 s | 10 | 8 / 1 | 1 collect | 15,026 / 2,048 | 4 / 28 | 2 / 16 | 1,530 | timeout |
+| 1 | no | 150.187 s | 10 | 8 / 1 | 1 collect | 16,472 / 2,353 | 4 / 32 | 2 / 18 | 1,735 | timeout |
+| 2 | no | 150.180 s | 10 | 8 / 1 | 1 collect | 15,038 / 2,029 | 4 / 28 | 2 / 16 | 1,530 | timeout |
+| 3 | yes | 21.777 s | 5 | 5 / 0 | 0 | 7,790 / 881 | 4 / 9 | 2 / 6 | 536 | — |
+| 4 | yes | 38.014 s | 7 | 6 / 0 | 0 | 9,661 / 1,428 | 4 / 12 | 2 / 8 | 720 | — |
+| 5 | yes | 36.589 s | 8 | 8 / 0 | 1 craft | 12,204 / 1,401 | 4 / 18 | 2 / 12 | 1,058 | — |
 
 Aggregate evidence:
 
 - Raw / valid / infrastructure-invalid runs: 5 / 5 / 0.
-- Goal completions: 4/5 (80%). This is a separate M4 regression signal and matches, but is not combined with, M3.4's 8/10 (80%) reference.
-- Successful-run completion time: 38.114 s median, 39.836 s mean.
-- Successful-run decisions: 8 median, 8.5 mean.
-- Progress/no-progress executed-action rates: 42/43 (97.67%) / 1/43 (2.33%).
-- Provider calls: 44; input/output tokens: 67,218 / 8,571.
-- Memory episodes created/retrieved: 22 / 109; semantic facts created/retrieved: 10 / 67.
-- Estimated memory prompt contribution: 6,165 tokens total, about 140 per provider call. This is the documented `ceil(JSON.stringify(context).length / 4)` estimate, not provider tokenizer usage.
-- Memory retrieval failures, persistence failures, reflection calls/failures, validation rejections, grounding rejections, provider errors, reflexes, and manual overrides: all zero.
-- Craft failures: 2/35 (5.71%), both controlled `inventory_changed`; two separate eligible retries occurred and both succeeded.
+- Goal completions: 3/5 (60%). This is a separate M4 regression signal, 20 percentage points below but not combined with M3.4's 8/10 (80%) reference.
+- Successful-run completion time: 36.589 s median, 32.127 s mean.
+- Successful-run decisions: 7 median, 6.67 mean.
+- Progress/no-progress executed-action rates: 35/37 (94.59%) / 2/37 (5.41%).
+- Provider calls: 41; input/output tokens: 61,165 / 8,092.
+- Memory episodes created/retrieved: 20 / 99; semantic facts created/retrieved: 10 / 60.
+- Estimated memory prompt contribution: 5,579 tokens total, about 136 per provider call. This is the documented `ceil(JSON.stringify(context).length / 4)` estimate, not provider tokenizer usage.
+- Memory retrieval failures, persistence failures, reflection calls/failures, grounding rejections, reflexes, and manual overrides: all zero.
+- One structurally valid decision was rejected for a non-batch craft amount (1/41, 2.44%), and one provider call returned incomplete output (1/41, 2.44%).
+- Craft failures: 1/30 (3.33%), a controlled `inventory_changed`; one eligible retry occurred and succeeded.
 
-Runs 3 and 4 recovered from an ambiguous `wooden_sword` inventory-change failure and completed with a wooden pickaxe. Run 5 is a model/resource-allocation timeout, not a memory, provider, grounding, persistence, or infrastructure failure. It crafted a second table, attempted grounded stone collection without the required tool, then failed to find a safe exploration route before the trial deadline. Runtime collection revalidation returned `missing_required_tool` safely.
+Runs 1 and 2 are model/resource-allocation timeouts, not memory, grounding, persistence, or infrastructure failures. Both crafted a second table, attempted grounded stone collection without the required tool, then failed to find a safe exploration route before the trial deadline. Runtime collection revalidation returned `missing_required_tool` safely; run 1 also had one incomplete provider response. Run 3 completed in five decisions after selecting 12 planks. Run 4 recovered from one contextual amount rejection and completed with a wooden shovel. Run 5 recovered from an ambiguous `wooden_sword` inventory-change failure and completed with a wooden pickaxe.
 
 ## Reproduction
 
@@ -110,7 +111,7 @@ Credentials are loaded only from the ignored local `.env`. The live structured r
 
 - The JSON implementation is designed for one process per agent/world file. It has a serialized in-process mutation queue but no cross-process file locking.
 - Reflection is opt-in and fully bounded, but this M4 evidence does not include a paid live reflection call; reflection quality and real token cost remain unmeasured.
-- Semantic memory records world-specific history, not generic recipes, planning state, or current capability. It cannot prevent every model-level resource detour, as run 5 demonstrates.
+- Semantic memory records world-specific history, not generic recipes, planning state, or current capability. It cannot prevent every model-level resource detour, as runs 1 and 2 demonstrate. The five-run 60% signal is below M3.4's 80% reference and warrants future reliability measurement, but it does not indicate a memory safety or persistence failure.
 - Perception conflict decay currently applies to resource and landmark facts only, where absence in a covered region is meaningful.
 - A timestamp cursor is sufficient for the bounded recorder batches used here; a future store migration would be needed before supporting concurrent writers that can create more than eight same-timestamp reflection candidates.
 
