@@ -1,9 +1,45 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { createInterface } from 'node:readline'
 
+interface BufferedLine {
+  sequence: number
+  value: string
+}
+
+export class BoundedLineBuffer {
+  private readonly entries: BufferedLine[] = []
+  private nextSequence = 0
+
+  constructor(private readonly capacity: number) {
+    if (!Number.isSafeInteger(capacity) || capacity < 1) {
+      throw new Error('Paper output buffer capacity must be a positive integer.')
+    }
+  }
+
+  get oldestCursor(): number {
+    return this.entries[0]?.sequence ?? this.nextSequence
+  }
+
+  append(value: string): void {
+    this.entries.push({ sequence: this.nextSequence, value })
+    this.nextSequence += 1
+    if (this.entries.length > this.capacity) this.entries.shift()
+  }
+
+  scan(cursor: number, match: (line: string) => boolean): { matched: boolean; cursor: number } {
+    let nextCursor = Math.max(cursor, this.oldestCursor)
+    for (const entry of this.entries) {
+      if (entry.sequence < nextCursor) continue
+      nextCursor = entry.sequence + 1
+      if (match(entry.value)) return { matched: true, cursor: nextCursor }
+    }
+    return { matched: false, cursor: nextCursor }
+  }
+}
+
 export class PaperController {
   private process: ChildProcessWithoutNullStreams | null = null
-  private readonly lines: string[] = []
+  private readonly lines = new BoundedLineBuffer(500)
   private watchdogEvents = 0
 
   constructor(
@@ -51,8 +87,7 @@ export class PaperController {
   private capture(stream: NodeJS.ReadableStream): void {
     createInterface({ input: stream }).on('line', line => {
       const plain = line.replaceAll(/\u001b\[[0-9;]*m/g, '')
-      this.lines.push(plain)
-      if (this.lines.length > 500) this.lines.shift()
+      this.lines.append(plain)
       if (plain.includes('has not responded for')) this.watchdogEvents += 1
       process.stderr.write(`${plain}\n`)
     })
@@ -60,12 +95,11 @@ export class PaperController {
 
   private async waitFor(match: (line: string) => boolean, timeoutMs: number): Promise<void> {
     const startedAt = Date.now()
-    let index = 0
+    let cursor = this.lines.oldestCursor
     while (Date.now() - startedAt < timeoutMs) {
-      while (index < this.lines.length) {
-        if (match(this.lines[index] ?? '')) return
-        index += 1
-      }
+      const scan = this.lines.scan(cursor, match)
+      if (scan.matched) return
+      cursor = scan.cursor
       const child = this.requireProcess()
       if (child.exitCode !== null) throw new Error(`Paper exited with code ${child.exitCode}.`)
       await new Promise(resolve => setTimeout(resolve, 50))
