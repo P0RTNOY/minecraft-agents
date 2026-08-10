@@ -336,6 +336,7 @@ function memoryDouble(events: string[]): AgentMemory {
       context: { recentEpisodes: [], relevantFacts: [] }
     }),
     record: async () => ({ episodesCreated: 0, semanticFactsCreated: 0 }),
+    recordSocial: async () => ({ episodesCreated: 0, semanticFactsCreated: 0 }),
     flush: async () => { events.push('memory:flush') },
     metrics: emptyMemoryMetrics
   }

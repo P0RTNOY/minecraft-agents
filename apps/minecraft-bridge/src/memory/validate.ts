@@ -21,7 +21,12 @@ const EPISODE_TYPES = new Set<EpisodeType>([
   'threat_encounter',
   'player_interaction',
   'goal_milestone',
-  'exploration_discovery'
+  'exploration_discovery',
+  'agent_encounter',
+  'social_utterance',
+  'conversation_started',
+  'conversation_completed',
+  'conversation_interrupted'
 ])
 
 const EPISODE_SOURCES = new Set<EpisodeSource>([
@@ -29,7 +34,8 @@ const EPISODE_SOURCES = new Set<EpisodeSource>([
   'action',
   'goal',
   'reflex',
-  'player'
+  'player',
+  'social'
 ])
 
 const SEMANTIC_RELATIONS = new Set<SemanticRelation>([
@@ -147,7 +153,7 @@ export function decodeEpisode(value: unknown, path = 'episode'): EpisodicMemory 
   const source = record.source
   if (!EPISODE_SOURCES.has(source as EpisodeSource)) fail(`${path}.source is invalid.`)
 
-  return {
+  const decoded: EpisodicMemory = {
     id: requireIdentifier(record.id, `${path}.id`),
     ...identity,
     timestamp: requireTimestamp(record.timestamp, `${path}.timestamp`),
@@ -157,6 +163,8 @@ export function decodeEpisode(value: unknown, path = 'episode'): EpisodicMemory 
     source: source as EpisodeSource,
     context: decodeEpisodeContext(record.context, `${path}.context`)
   }
+  validateSocialEpisode(decoded, path)
+  return decoded
 }
 
 export function decodeSemanticMemory(
@@ -266,7 +274,15 @@ function decodeEpisodeContext(value: unknown, path: string): EpisodeContext {
     'action',
     'target',
     'outcome',
-    'goalType'
+    'goalType',
+    'socialEventId',
+    'targetAgentId',
+    'speakerAgentId',
+    'recipientAgentId',
+    'conversationId',
+    'message',
+    'socialEventVerified',
+    'turns'
   ], path)
   const region = requireString(valueAt(record, 'region'), `${path}.region`)
   if (!REGION.test(region) || region.length > 32) {
@@ -282,8 +298,103 @@ function decodeEpisodeContext(value: unknown, path: string): EpisodeContext {
     ...optionalIdentifier(record, 'action', path),
     ...optionalIdentifier(record, 'target', path),
     ...optionalIdentifier(record, 'outcome', path),
-    ...optionalIdentifier(record, 'goalType', path)
+    ...optionalIdentifier(record, 'goalType', path),
+    ...optionalIdentifier(record, 'socialEventId', path),
+    ...optionalIdentifier(record, 'targetAgentId', path),
+    ...optionalIdentifier(record, 'speakerAgentId', path),
+    ...optionalIdentifier(record, 'recipientAgentId', path),
+    ...optionalIdentifier(record, 'conversationId', path),
+    ...optionalBoundedText(record, 'message', path, 256),
+    ...optionalBoolean(record, 'socialEventVerified', path),
+    ...optionalInteger(record, 'turns', path, 0, 8)
   }
+}
+
+function validateSocialEpisode(episode: EpisodicMemory, path: string): void {
+  const socialTypes = new Set<EpisodeType>([
+    'agent_encounter',
+    'social_utterance',
+    'conversation_started',
+    'conversation_completed',
+    'conversation_interrupted'
+  ])
+  const social = socialTypes.has(episode.type)
+  if (social !== (episode.source === 'social')) {
+    fail(`${path}.source does not match its social episode type.`)
+  }
+  if (!social) return
+  const context = episode.context
+  if (!context.socialEventId || !context.targetAgentId) {
+    fail(`${path}.context requires socialEventId and targetAgentId.`)
+  }
+  if (context.socialEventVerified === undefined) {
+    fail(`${path}.context.socialEventVerified is required.`)
+  }
+  if (episode.type === 'agent_encounter') {
+    if (context.socialEventVerified !== true) {
+      fail(`${path}.context.socialEventVerified must be true.`)
+    }
+    return
+  }
+  if (!context.conversationId) {
+    fail(`${path}.context.conversationId is required.`)
+  }
+  if (episode.type === 'social_utterance') {
+    if (
+      !context.speakerAgentId ||
+      !context.recipientAgentId ||
+      !context.message ||
+      context.socialEventVerified !== false
+    ) {
+      fail(`${path}.context contains invalid unverified utterance provenance.`)
+    }
+    return
+  }
+  if (context.socialEventVerified !== true) {
+    fail(`${path}.context.socialEventVerified must be true.`)
+  }
+  if (
+    episode.type !== 'conversation_started' &&
+    (context.turns === undefined || !context.outcome)
+  ) {
+    fail(`${path}.context requires turns and outcome.`)
+  }
+}
+
+function optionalBoundedText(
+  record: Record<string, unknown>,
+  key: keyof EpisodeContext,
+  path: string,
+  maximum: number
+): Partial<EpisodeContext> {
+  const value = record[key]
+  return value === undefined
+    ? {}
+    : { [key]: requireBoundedText(value, `${path}.${key}`, maximum) }
+}
+
+function optionalBoolean(
+  record: Record<string, unknown>,
+  key: keyof EpisodeContext,
+  path: string
+): Partial<EpisodeContext> {
+  const value = record[key]
+  if (value === undefined) return {}
+  if (typeof value !== 'boolean') fail(`${path}.${key} must be boolean.`)
+  return { [key]: value }
+}
+
+function optionalInteger(
+  record: Record<string, unknown>,
+  key: keyof EpisodeContext,
+  path: string,
+  minimum: number,
+  maximum: number
+): Partial<EpisodeContext> {
+  const value = record[key]
+  return value === undefined
+    ? {}
+    : { [key]: requireInteger(value, `${path}.${key}`, minimum, maximum) }
 }
 
 function optionalPosition(value: unknown, path: string): { position?: EpisodeContext['position'] } {
