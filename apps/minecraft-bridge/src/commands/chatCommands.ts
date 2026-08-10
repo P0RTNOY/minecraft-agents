@@ -1,5 +1,7 @@
 import type { Bot } from 'mineflayer'
 
+import { ActionArbiter } from '../agent/actionArbiter.js'
+import { cancelAgentAction } from '../agent/cancelAction.js'
 import {
   markManualOverride,
   type AgentState
@@ -61,7 +63,8 @@ export function parseChatCommand(
 
 export function registerChatCommands(
   bot: Bot,
-  state: AgentState
+  state: AgentState,
+  arbiter: ActionArbiter = new ActionArbiter()
 ): void {
   bot.on('chat', (username, message) => {
     if (username === bot.username) {
@@ -77,7 +80,15 @@ export function registerChatCommands(
 
     markManualOverride(state)
 
-    void executeChatCommand(bot, state, username, command).catch(error => {
+    void arbiter.run({
+      source: 'manual',
+      cancel: () => cancelAgentAction(bot, state),
+      execute: () => executeChatCommand(bot, state, username, command)
+    }).then(result => {
+      if (result.status === 'rejected') {
+        console.log(`ℹ️ Manual command skipped: ${result.reason}`)
+      }
+    }).catch(error => {
       console.error('❌ Unhandled chat command error:', error)
     })
   })

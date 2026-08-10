@@ -19,6 +19,9 @@ export function evaluateReflex(
     entity.name === 'creeper' &&
     entity.distance <= CREEPER_EMERGENCY_DISTANCE
   ))
+  const closeHostile = hostiles.find(entity => (
+    entity.distance <= HOSTILE_EMERGENCY_DISTANCE
+  ))
 
   if (creeper) {
     return {
@@ -30,10 +33,6 @@ export function evaluateReflex(
   }
 
   if (perception.health <= LOW_HEALTH_THRESHOLD) {
-    const closeHostile = hostiles.find(entity => (
-      entity.distance <= HOSTILE_EMERGENCY_DISTANCE
-    ))
-
     if (closeHostile) {
       return {
         action: 'flee_from_entity',
@@ -46,7 +45,8 @@ export function evaluateReflex(
 
   if (
     perception.food <= CRITICAL_FOOD_THRESHOLD &&
-    perception.edibleItemCount > 0
+    perception.edibleItemCount > 0 &&
+    !closeHostile
   ) {
     return {
       action: 'eat',

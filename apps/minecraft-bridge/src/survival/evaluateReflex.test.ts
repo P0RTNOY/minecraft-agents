@@ -97,6 +97,15 @@ describe('evaluateReflex', () => {
     }))?.action, 'flee_from_entity')
   })
 
+  it('does not stop to eat while a close hostile applies pressure', () => {
+    assert.equal(evaluateReflex(snapshot({
+      health: LOW_HEALTH_THRESHOLD + 1,
+      food: 1,
+      edibleItemCount: 3,
+      nearbyEntities: [hostile(9, 'zombie', 3)]
+    })), null)
+  })
+
   it('selects the nearest threat deterministically', () => {
     const result = evaluateReflex(snapshot({
       nearbyEntities: [

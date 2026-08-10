@@ -1,6 +1,7 @@
 export interface BrainConfig {
   autonomous: boolean
   tickIntervalMs: number
+  reflexIntervalMs: number
   provider: string
   model: string
   ollamaBaseUrl: string
@@ -14,6 +15,9 @@ type Environment = Readonly<Record<string, string | undefined>>
 const DEFAULT_TICK_INTERVAL_MS = 5000
 const MIN_TICK_INTERVAL_MS = 1000
 const MAX_TICK_INTERVAL_MS = 300_000
+const DEFAULT_REFLEX_INTERVAL_MS = 250
+const MIN_REFLEX_INTERVAL_MS = 100
+const MAX_REFLEX_INTERVAL_MS = 500
 
 export function loadBrainConfig(
   environment: Environment = process.env
@@ -24,7 +28,18 @@ export function loadBrainConfig(
     false
   )
   const tickIntervalMs = parseInterval(
-    environment.AGENT_TICK_INTERVAL_MS
+    environment.AGENT_TICK_INTERVAL_MS,
+    'AGENT_TICK_INTERVAL_MS',
+    DEFAULT_TICK_INTERVAL_MS,
+    MIN_TICK_INTERVAL_MS,
+    MAX_TICK_INTERVAL_MS
+  )
+  const reflexIntervalMs = parseInterval(
+    environment.AGENT_REFLEX_INTERVAL_MS,
+    'AGENT_REFLEX_INTERVAL_MS',
+    DEFAULT_REFLEX_INTERVAL_MS,
+    MIN_REFLEX_INTERVAL_MS,
+    MAX_REFLEX_INTERVAL_MS
   )
   const debugTiming = parseBoolean(
     environment.LLM_DEBUG_TIMING,
@@ -46,6 +61,7 @@ export function loadBrainConfig(
   return {
     autonomous,
     tickIntervalMs,
+    reflexIntervalMs,
     provider,
     model,
     ollamaBaseUrl: environment.OLLAMA_BASE_URL?.trim() ||
@@ -73,27 +89,29 @@ function parseBoolean(
   throw new Error(`${name} must be either true or false.`)
 }
 
-function parseInterval(value: string | undefined): number {
+function parseInterval(
+  value: string | undefined,
+  name: string,
+  defaultValue: number,
+  minimum: number,
+  maximum: number
+): number {
   if (value === undefined || value.trim() === '') {
-    return DEFAULT_TICK_INTERVAL_MS
+    return defaultValue
   }
 
   if (!/^\d+$/.test(value.trim())) {
-    throw new Error('AGENT_TICK_INTERVAL_MS must be an integer.')
+    throw new Error(`${name} must be an integer.`)
   }
 
   const interval = Number(value)
 
-  if (interval < MIN_TICK_INTERVAL_MS) {
-    throw new Error(
-      `AGENT_TICK_INTERVAL_MS must be at least ${MIN_TICK_INTERVAL_MS}.`
-    )
+  if (interval < minimum) {
+    throw new Error(`${name} must be at least ${minimum}.`)
   }
 
-  if (interval > MAX_TICK_INTERVAL_MS) {
-    throw new Error(
-      `AGENT_TICK_INTERVAL_MS must be at most ${MAX_TICK_INTERVAL_MS}.`
-    )
+  if (interval > maximum) {
+    throw new Error(`${name} must be at most ${maximum}.`)
   }
 
   return interval

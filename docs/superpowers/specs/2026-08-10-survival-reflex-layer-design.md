@@ -8,7 +8,24 @@ Add a small deterministic survival layer that can flee immediate threats and eat
 
 Run a fast `ReflexLoop` separately from the slower `AutonomousAgentLoop`. Both submit controlled actions through one small `ActionArbiter`, which explicitly enforces:
 
-`manual > reflex > llm`
+`Manual > Reflex > LLM`
+
+```text
+                  Perception
+                      │
+           ┌──────────┴──────────┐
+           ▼                     ▼
+   M2 Reflex System       M1 LLM Brain
+     deterministic          deliberate
+           │                     │
+           └──────────┬──────────┘
+                      ▼
+                Action Arbiter
+             Manual > Reflex > LLM
+                      │
+                      ▼
+              Controlled Skills
+```
 
 The arbiter serializes skill execution, cancels lower-priority work through existing Mineflayer cancellation primitives, and advances a generation whenever manual or reflex work takes priority. A Brain cycle captures that generation before awaiting its provider; a changed generation makes the returned LLM decision stale and prevents execution.
 

@@ -1,6 +1,7 @@
 import mineflayer from 'mineflayer'
 import { pathfinder } from 'mineflayer-pathfinder'
 
+import { ActionArbiter } from './agent/actionArbiter.js'
 import { AutonomousAgentLoop } from './agent/loop.js'
 import { createAgentState } from './agent/state.js'
 import {
@@ -13,6 +14,7 @@ import { registerChatCommands } from './commands/chatCommands.js'
 import { formatPerception } from './perception/format.js'
 import { perceive } from './perception/perceive.js'
 import { followNearestPlayer } from './skills/index.js'
+import { ReflexLoop } from './survival/reflexLoop.js'
 
 const agentName = 'Alice'
 const bot = mineflayer.createBot({
@@ -22,11 +24,13 @@ const bot = mineflayer.createBot({
   auth: 'offline'
 })
 const state = createAgentState(agentName)
-const autonomousRuntime = configureAutonomousRuntime()
+const arbiter = new ActionArbiter()
+const runtime = configureRuntime()
 let autonomousLoop: AutonomousAgentLoop | null = null
+let reflexLoop: ReflexLoop | null = null
 
 bot.loadPlugin(pathfinder)
-registerChatCommands(bot, state)
+registerChatCommands(bot, state, arbiter)
 
 bot.once('spawn', () => {
   console.log(`✅ ${bot.username} spawned in Minecraft`)
@@ -37,12 +41,26 @@ bot.once('spawn', () => {
     console.log(formatPerception(perceive(bot)).join('\n'))
   }, 2000)
 
-  if (autonomousRuntime) {
+  if (runtime) {
+    reflexLoop = new ReflexLoop({
+      bot,
+      state,
+      arbiter,
+      intervalMs: runtime.config.reflexIntervalMs
+    })
+    console.log(
+      `⚡ Survival reflexes enabled (${runtime.config.reflexIntervalMs}ms)`
+    )
+    reflexLoop.start()
+  }
+
+  if (runtime?.provider) {
+    const { config, provider } = runtime
     setTimeout(() => {
-      const { config, provider } = autonomousRuntime
       autonomousLoop = new AutonomousAgentLoop({
         bot,
         state,
+        arbiter,
         provider,
         intervalMs: config.tickIntervalMs
       })
@@ -55,7 +73,7 @@ bot.once('spawn', () => {
     setTimeout(() => {
       console.log(`\n👤 ${state.agentName} is looking for a nearby player...`)
 
-      const result = followNearestPlayer(bot, state)
+      const result = followNearestPlayer(bot, state, 'autonomous')
 
       if (!result.success || !result.target) {
         console.log('❌ No nearby player found')
@@ -90,23 +108,23 @@ bot.on('error', error => {
 
 bot.on('end', () => {
   autonomousLoop?.stop()
+  reflexLoop?.stop()
 })
 
-function configureAutonomousRuntime(): {
+function configureRuntime(): {
   config: BrainConfig
-  provider: LLMProvider
+  provider: LLMProvider | null
 } | null {
   try {
     const config = loadBrainConfig()
-    if (!config.autonomous) return null
 
     return {
       config,
-      provider: createLLMProvider(config)
+      provider: config.autonomous ? createLLMProvider(config) : null
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
-    console.error(`❌ Autonomous mode disabled: ${message}`)
+    console.error(`❌ Agent runtime configuration disabled: ${message}`)
     return null
   }
 }

@@ -9,6 +9,7 @@ import { OllamaProvider } from './ollama.js'
 const config: BrainConfig = {
   autonomous: true,
   tickIntervalMs: 5000,
+  reflexIntervalMs: 250,
   provider: 'ollama',
   model: 'local-test-model',
   ollamaBaseUrl: 'http://127.0.0.1:11434',
