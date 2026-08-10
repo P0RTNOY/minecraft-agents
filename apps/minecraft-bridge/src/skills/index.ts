@@ -1,4 +1,5 @@
 export * from './collection.js'
+export * from './eat.js'
 export * from './execute.js'
 export * from './flee.js'
 export * from './inventory.js'

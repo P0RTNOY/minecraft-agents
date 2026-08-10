@@ -5,4 +5,9 @@ export interface FleeDecision {
   reason: string
 }
 
-export type SurvivalDecision = FleeDecision
+export interface EatDecision {
+  action: 'eat'
+  reason: string
+}
+
+export type SurvivalDecision = FleeDecision | EatDecision
