@@ -157,15 +157,49 @@ describe('runBrainBenchmark', () => {
     assert.deepEqual(results.map(result => ({
       scenario: result.scenario,
       valid: result.valid,
+      action: result.action,
+      noProgress: result.noProgress,
+      repeatedNoProgress: result.repeatedNoProgress,
       schemaFailure: result.schemaFailure,
       unsafeTarget: result.unsafeTarget
     })), [
-      { scenario: 'invalid', valid: false, schemaFailure: true, unsafeTarget: false },
-      { scenario: 'self_target', valid: true, schemaFailure: false, unsafeTarget: true },
-      { scenario: 'hallucinated_target', valid: true, schemaFailure: false, unsafeTarget: true },
-      { scenario: 'visible_target', valid: true, schemaFailure: false, unsafeTarget: false },
-      { scenario: 'uncraftable_item', valid: true, schemaFailure: false, unsafeTarget: true },
-      { scenario: 'unavailable_block', valid: true, schemaFailure: false, unsafeTarget: true }
+      { scenario: 'invalid', valid: false, action: null, noProgress: false, repeatedNoProgress: false, schemaFailure: true, unsafeTarget: false },
+      { scenario: 'self_target', valid: true, action: 'come_to_player', noProgress: true, repeatedNoProgress: false, schemaFailure: false, unsafeTarget: true },
+      { scenario: 'hallucinated_target', valid: true, action: 'follow_player', noProgress: true, repeatedNoProgress: false, schemaFailure: false, unsafeTarget: true },
+      { scenario: 'visible_target', valid: true, action: 'follow_player', noProgress: true, repeatedNoProgress: false, schemaFailure: false, unsafeTarget: false },
+      { scenario: 'uncraftable_item', valid: true, action: 'craft_item', noProgress: true, repeatedNoProgress: false, schemaFailure: false, unsafeTarget: true },
+      { scenario: 'unavailable_block', valid: true, action: 'place_block', noProgress: true, repeatedNoProgress: false, schemaFailure: false, unsafeTarget: true }
+    ])
+  })
+
+  it('records repeated structurally valid proposals rejected by grounding', async () => {
+    const decision = {
+      action: 'collect_block',
+      block: 'oak_log',
+      reason: 'Collect unavailable wood.'
+    }
+    const results = await runBrainBenchmark({
+      provider: scriptedProvider([decision, decision]),
+      providerName: 'scripted',
+      model: 'ungrounded-model',
+      scenarios: [{
+        id: 'repeated_ungrounded',
+        description: 'Repeated unavailable target.',
+        input: baseInput,
+        samples: 2
+      }],
+      now: () => 0
+    })
+
+    assert.deepEqual(results.map(result => ({
+      action: result.action,
+      grounded: result.grounded,
+      repeated: result.repeated,
+      noProgress: result.noProgress,
+      repeatedNoProgress: result.repeatedNoProgress
+    })), [
+      { action: 'collect_block', grounded: false, repeated: false, noProgress: true, repeatedNoProgress: false },
+      { action: 'collect_block', grounded: false, repeated: true, noProgress: true, repeatedNoProgress: true }
     ])
   })
 

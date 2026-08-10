@@ -144,6 +144,11 @@ export async function runBrainBenchmark(
         continue
       }
 
+      const proposedDecision = validation.decision
+      const signature = decisionSignature(proposedDecision)
+      const repeated = signature === previousSignature
+      previousSignature = signature
+
       const contextualValidation = validateDecision(
         output,
         buildDecisionContext(input)
@@ -161,6 +166,11 @@ export async function runBrainBenchmark(
           ),
           timing,
           valid: true,
+          action: proposedDecision.action,
+          reason: proposedDecision.reason,
+          repeated,
+          noProgress: true,
+          repeatedNoProgress: repeated,
           unsafeTarget: true,
           error: formatValidationIssues(contextualValidation.issues)
         })
@@ -168,10 +178,7 @@ export async function runBrainBenchmark(
       }
 
       const decision = contextualValidation.decision
-      const signature = decisionSignature(decision)
-      const repeated = signature === previousSignature
       const repetition = assessRepetition(decision, input)
-      previousSignature = signature
 
       if (!repetition.allowed) {
         results.push({

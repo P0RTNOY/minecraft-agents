@@ -89,6 +89,7 @@ describe('Brain decision contract', () => {
     assert.match(prompt, /active short-term goal/)
     assert.match(prompt, /change.*goal progress/)
     assert.match(prompt, /avoid idle.*grounded action/i)
+    assert.match(prompt, /exact target.*availablecapabilities/i)
     assert.match(prompt, /do not (invent|fabricate).*items.*blocks.*players.*recipes/i)
     assert.match(prompt, /do not repeat.*no progress/i)
     assert.doesNotMatch(prompt, /log.*plank.*crafting table.*tool/i)
