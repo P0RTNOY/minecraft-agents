@@ -84,6 +84,7 @@ describe('AgentRuntime', () => {
     await Promise.all([setup.runtime.stop(), setup.runtime.stop()])
 
     assert.deepEqual(setup.events, [
+      'commands:remove',
       'timer:clear:2',
       'brain:stop',
       'reflex:stop',
@@ -94,10 +95,33 @@ describe('AgentRuntime', () => {
       'telemetry:memory',
       'memory:flush',
       'telemetry:flush',
-      'bot:quit:agent runtime stopped',
-      'commands:remove'
+      'bot:quit:agent runtime stopped'
     ])
     assert.equal(setup.runtime.snapshot().phase, 'stopped')
+  })
+
+  it('removes command listeners before waiting for active loops to drain', async () => {
+    const brainIdleGate = deferred<void>()
+    const setup = harness(
+      { id: 'alice', username: 'Alice' },
+      0,
+      {
+        brainIdleGate: brainIdleGate.promise,
+        commandProbe: true
+      }
+    )
+    await setup.runtime.start()
+    setup.events.length = 0
+
+    const stopping = setup.runtime.stop()
+    assert.equal(setup.runtime.snapshot().phase, 'stopping')
+    assert.equal(setup.events.includes('brain:idle'), true)
+
+    setup.bot.emit('test-command')
+    assert.equal(setup.events.includes('command:executed'), false)
+
+    brainIdleGate.resolve()
+    await stopping
   })
 
   it('fails one agent before connection when its memory cannot open', async () => {
@@ -176,12 +200,14 @@ function harness(
     memoryFailure?: Error
     memoryGate?: Promise<void>
     autoSpawn?: boolean
+    brainIdleGate?: Promise<void>
+    commandProbe?: boolean
   } = {}
 ) {
   const events: string[] = []
   const scheduler = new ManualScheduler(events)
   const bot = createBot(events)
-  const brain = new LoopDouble('brain', events)
+  const brain = new LoopDouble('brain', events, options.brainIdleGate)
   const reflex = new LoopDouble('reflex', events)
   const memory = memoryDouble(events)
   const telemetry = telemetryDouble(events, definition)
@@ -219,7 +245,12 @@ function harness(
     },
     registerCommands: () => {
       events.push('commands:register')
-      return () => events.push('commands:remove')
+      const onTestCommand = () => events.push('command:executed')
+      if (options.commandProbe) bot.on('test-command', onTestCommand)
+      return () => {
+        events.push('commands:remove')
+        if (options.commandProbe) bot.off('test-command', onTestCommand)
+      }
     },
     observeVisibleExternalPlayers: () => ['ExternalPlayer'],
     cancelAction: () => events.push('action:cancel'),
@@ -247,7 +278,8 @@ class LoopDouble implements RuntimeLoop {
 
   constructor(
     private readonly name: string,
-    private readonly events: string[]
+    private readonly events: string[],
+    private readonly idleGate?: Promise<void>
   ) {}
 
   start(): void {
@@ -261,6 +293,7 @@ class LoopDouble implements RuntimeLoop {
 
   async waitForIdle(): Promise<void> {
     this.events.push(`${this.name}:idle`)
+    await this.idleGate
   }
 }
 

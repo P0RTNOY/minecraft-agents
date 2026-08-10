@@ -219,6 +219,8 @@ export class AgentRuntime {
     this.phase = 'stopping'
     const errors: unknown[] = []
 
+    captureSync(errors, () => this.removeCommands?.())
+    this.removeCommands = null
     if (this.brainStartTimer !== null) {
       captureSync(errors, () => {
         this.services.scheduler.clearTimeout(this.brainStartTimer)
@@ -245,8 +247,6 @@ export class AgentRuntime {
     if (this.bot) {
       captureSync(errors, () => this.bot!.quit('agent runtime stopped'))
     }
-    captureSync(errors, () => this.removeCommands?.())
-    this.removeCommands = null
     for (const remove of this.removeRuntimeListeners.splice(0)) {
       captureSync(errors, remove)
     }
