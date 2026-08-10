@@ -13,14 +13,15 @@ import { createLLMProvider } from '../providers/index.js'
 import { perceive } from '../../perception/perceive.js'
 import { createDefaultDecisionExecutor } from '../../skills/execute.js'
 import { ReflexLoop } from '../../survival/reflexLoop.js'
+import {
+  BOOTSTRAP_TEST_AREA,
+  bootstrapPlatformCommands,
+  bootstrapRunResetCommands,
+  bootstrapWorldCleanupCommands
+} from './environment.js'
 import { PaperController } from './paper.js'
 import { runBootstrapTrials } from './runner.js'
 import { instrumentProvider } from './telemetry.js'
-
-const TEST_MIN = -16
-const TEST_MAX = 16
-const TEST_FLOOR_Y = 199
-const TEST_Y = 200
 
 interface LiveContext {
   bot: Bot
@@ -46,16 +47,10 @@ let originalPosition: { x: number, y: number, z: number } | null = null
 async function main(): Promise<void> {
   try {
     await paper.start()
-    await paper.runCommands([
-    'difficulty peaceful',
-    'forceload add -1 -1 1 1',
-    `fill ${TEST_MIN} ${TEST_Y} ${TEST_MIN} ${TEST_MAX} ${TEST_Y + 2} ${TEST_MAX} air`,
-    `fill ${TEST_MIN} ${TEST_FLOOR_Y} ${TEST_MIN} ${TEST_MAX} ${TEST_FLOOR_Y} ${TEST_MAX} stone`,
-    `fill ${TEST_MIN} ${TEST_Y} ${TEST_MIN} ${TEST_MAX} ${TEST_Y + 2} ${TEST_MIN} barrier`,
-    `fill ${TEST_MIN} ${TEST_Y} ${TEST_MAX} ${TEST_MAX} ${TEST_Y + 2} ${TEST_MAX} barrier`,
-    `fill ${TEST_MIN} ${TEST_Y} ${TEST_MIN} ${TEST_MIN} ${TEST_Y + 2} ${TEST_MAX} barrier`,
-    `fill ${TEST_MAX} ${TEST_Y} ${TEST_MIN} ${TEST_MAX} ${TEST_Y + 2} ${TEST_MAX} barrier`
-  ], 'bootstrap_platform_ready')
+    await paper.runCommands(
+      bootstrapPlatformCommands(),
+      'bootstrap_platform_ready'
+    )
 
     const result = await runBootstrapTrials({
     runs,
@@ -74,11 +69,10 @@ async function main(): Promise<void> {
       contexts.set(runId, { bot, state, watchdogStart: paper.watchdogCount })
       const marker = `${runId}_prepared`
       const ready = waitForMessage(bot, marker)
-      paper.send(`fill ${TEST_MIN + 1} ${TEST_Y} ${TEST_MIN + 1} ${TEST_MAX - 1} ${TEST_Y + 2} ${TEST_MAX - 1} air`)
-      paper.send(`kill @e[type=item,x=${TEST_MIN},y=${TEST_Y},z=${TEST_MIN},dx=${TEST_MAX - TEST_MIN},dy=3,dz=${TEST_MAX - TEST_MIN}]`)
+      for (const command of bootstrapRunResetCommands()) paper.send(command)
       paper.send('clear Alice')
       paper.send('effect clear Alice')
-      paper.send(`tp Alice 0.5 ${TEST_Y} 0.5`)
+      paper.send(`tp Alice 0.5 ${BOOTSTRAP_TEST_AREA.playerY} 0.5`)
       paper.send('give Alice oak_log 3')
       paper.send('effect give Alice instant_health 1 10 true')
       paper.send('effect give Alice saturation 1 10 true')
@@ -149,11 +143,10 @@ async function main(): Promise<void> {
     }
     contexts.clear()
     try {
-      await paper.runCommands([
-        `fill ${TEST_MIN} ${TEST_FLOOR_Y} ${TEST_MIN} ${TEST_MAX} ${TEST_Y + 2} ${TEST_MAX} air`,
-        'forceload remove all',
-        'difficulty easy'
-      ], 'bootstrap_cleanup_complete')
+      await paper.runCommands(
+        bootstrapWorldCleanupCommands(),
+        'bootstrap_cleanup_complete'
+      )
     } finally {
       await paper.stop()
     }
