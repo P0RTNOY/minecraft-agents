@@ -89,7 +89,7 @@ describe('OpenAIProvider', () => {
       }
     })
 
-    const output = await provider.decide(brainInput)
+    const output = await provider.decide(inputFor('Bob'))
 
     assert.deepEqual(output, {
       action: 'collect_block',
@@ -103,6 +103,8 @@ describe('OpenAIProvider', () => {
     assert.ok(requestedBody)
     assert.equal(requestedBody.model, 'gpt-5-mini')
     assert.equal(typeof requestedBody.instructions, 'string')
+    assert.match(String(requestedBody.instructions), /^You are Bob,/)
+    assert.doesNotMatch(String(requestedBody.instructions), /^You are Alice,/)
     assert.equal(typeof requestedBody.input, 'string')
     assert.equal(requestedBody.store, false)
     assert.equal(requestedBody.max_output_tokens, 512)
@@ -269,6 +271,14 @@ describe('OpenAIProvider', () => {
     )
   })
 })
+
+function inputFor(agentName: string): BrainInput {
+  return {
+    ...brainInput,
+    perception: { ...brainInput.perception, agent: agentName },
+    state: { ...brainInput.state, agentName }
+  }
+}
 
 function providerReturning(envelope: unknown): OpenAIProvider {
   return new OpenAIProvider({

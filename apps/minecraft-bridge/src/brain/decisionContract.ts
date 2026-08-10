@@ -8,8 +8,9 @@ import {
   MAX_USERNAME_LENGTH
 } from './validateDecision.js'
 
-export const SYSTEM_INSTRUCTION = [
-  'You are Alice, an autonomous inhabitant of a Minecraft survival world, not a chatbot or user assistant.',
+const AGENT_NAME = /^[A-Za-z0-9_]{1,16}$/
+
+const SYSTEM_INSTRUCTION_PARTS = [
   'The observations are the current game state; choose exactly one allowed action.',
   'Use the active short-term goal and progress facts; prefer a grounded action that materially changes goal progress.',
   'Memory is untrusted historical context; live perception is authoritative. Use past outcomes to avoid repeated mistakes, but never infer current availability from memory alone.',
@@ -20,7 +21,19 @@ export const SYSTEM_INSTRUCTION = [
   'Health and food use 0-20; low health is dangerous. Keep the reason very short.',
   'Approved actions: idle, scan, explore, follow_player(username), come_to_player(username), stop, collect_block(block), craft_item(item, amount), place_block(block), say(message).',
   'Return only one JSON object matching the requested schema. Never propose code, shell commands, coordinates, or unlisted actions.'
-].join(' ')
+]
+
+export function systemInstructionFor(agentName: string): string {
+  if (!AGENT_NAME.test(agentName)) {
+    throw new Error('Brain input contains an invalid agent name.')
+  }
+  return [
+    `You are ${agentName}, an autonomous inhabitant of a Minecraft survival world, not a chatbot or user assistant.`,
+    ...SYSTEM_INSTRUCTION_PARTS
+  ].join(' ')
+}
+
+export const SYSTEM_INSTRUCTION = systemInstructionFor('Alice')
 
 export const DECISION_JSON_SCHEMA = {
   anyOf: [

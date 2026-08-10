@@ -131,7 +131,7 @@ describe('validateDecision', () => {
   it('accepts only visible external players when context is provided', () => {
     const context = {
       selfUsername: 'Alice',
-      visibleExternalPlayers: ['Steve'],
+      visibleExternalPlayers: ['Bob'],
       visibleNearbyBlocks: []
     }
     const selfTarget = validateDecision({
@@ -141,12 +141,12 @@ describe('validateDecision', () => {
     }, context)
     const hallucinatedTarget = validateDecision({
       action: 'follow_player',
-      username: 'Alex',
-      reason: 'Follow Alex.'
+      username: 'Dave',
+      reason: 'Follow Dave.'
     }, context)
     const externalTarget = validateDecision({
       action: 'follow_player',
-      username: 'steve',
+      username: 'bob',
       reason: 'Follow the visible player.'
     }, context)
 
@@ -156,7 +156,7 @@ describe('validateDecision', () => {
       success: true,
       decision: {
         action: 'follow_player',
-        username: 'Steve',
+        username: 'Bob',
         reason: 'Follow the visible player.'
       }
     })

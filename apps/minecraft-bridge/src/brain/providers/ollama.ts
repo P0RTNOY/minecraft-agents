@@ -1,7 +1,7 @@
 import {
   DECISION_JSON_SCHEMA,
   serializeBrainInput,
-  SYSTEM_INSTRUCTION
+  systemInstructionFor
 } from '../decisionContract.js'
 import type { LLMProvider, LLMRequestTiming } from '../provider.js'
 import type { BrainInput } from '../types.js'
@@ -58,7 +58,10 @@ export class OllamaProvider implements LLMProvider {
       body: JSON.stringify({
         model: this.model,
         messages: [
-          { role: 'system', content: SYSTEM_INSTRUCTION },
+          {
+            role: 'system',
+            content: systemInstructionFor(input.state.agentName)
+          },
           { role: 'user', content: JSON.stringify(serializeBrainInput(input)) }
         ],
         stream: false,

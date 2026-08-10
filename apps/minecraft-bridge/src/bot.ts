@@ -44,7 +44,7 @@ let autonomousLoop: AutonomousAgentLoop | null = null
 let reflexLoop: ReflexLoop | null = null
 
 bot.loadPlugin(pathfinder)
-registerChatCommands(bot, state, arbiter)
+registerChatCommands(bot, state, { arbiter })
 
 bot.once('spawn', () => {
   console.log(`✅ ${bot.username} spawned in Minecraft`)

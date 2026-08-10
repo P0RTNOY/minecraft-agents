@@ -83,7 +83,7 @@ describe('GroqProvider', () => {
       }
     })
 
-    const output = await provider.decide(brainInput)
+    const output = await provider.decide(inputFor('Bob'))
 
     assert.deepEqual(output, {
       action: 'collect_block',
@@ -94,6 +94,8 @@ describe('GroqProvider', () => {
       requestedUrl,
       'https://api.groq.com/openai/v1/chat/completions'
     )
+    const messages = requestedBodies[0]?.messages as Array<{ content: string }>
+    assert.match(messages[0]?.content ?? '', /^You are Bob,/)
     assert.equal(requestedAuthorization, 'Bearer test-api-key')
     const requestedBody = requestedBodies[0]
     assert.ok(requestedBody)
@@ -243,3 +245,11 @@ describe('GroqProvider', () => {
     )
   })
 })
+
+function inputFor(agentName: string): BrainInput {
+  return {
+    ...brainInput,
+    perception: { ...brainInput.perception, agent: agentName },
+    state: { ...brainInput.state, agentName }
+  }
+}

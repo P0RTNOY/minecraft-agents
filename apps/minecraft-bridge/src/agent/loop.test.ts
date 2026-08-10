@@ -317,8 +317,8 @@ describe('AutonomousAgentLoop', () => {
   it('does not execute self or hallucinated player targets', async () => {
     const decisions = [
       { action: 'come_to_player', username: 'Alice', reason: 'Meet Alice.' },
-      { action: 'follow_player', username: 'Alex', reason: 'Follow Alex.' },
-      { action: 'follow_player', username: 'Steve', reason: 'Follow Steve.' }
+      { action: 'follow_player', username: 'Dave', reason: 'Follow Dave.' },
+      { action: 'follow_player', username: 'Bob', reason: 'Follow Bob.' }
     ]
     let providerCalls = 0
     let executions = 0
@@ -339,7 +339,7 @@ describe('AutonomousAgentLoop', () => {
         nearbyBlocks: [],
         nearbyEntities: [{
           id: 1,
-          name: 'Steve',
+          name: 'Bob',
           type: 'player',
           category: 'UNKNOWN',
           distance: 4,

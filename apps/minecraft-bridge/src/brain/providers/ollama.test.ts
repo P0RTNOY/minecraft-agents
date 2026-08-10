@@ -72,7 +72,7 @@ describe('OllamaProvider', () => {
       fetchImpl
     })
 
-    const output = await provider.decide(brainInput)
+    const output = await provider.decide(inputFor('Bob'))
 
     assert.deepEqual(output, { action: 'idle', reason: 'Wait safely.' })
     assert.equal(requestedUrl, 'http://127.0.0.1:11434/api/chat')
@@ -90,6 +90,7 @@ describe('OllamaProvider', () => {
     })
 
     const messages = requestedBody?.messages as Array<{ content: string }>
+    assert.match(messages[0]?.content ?? '', /^You are Bob,/)
     const compactInput = JSON.parse(messages[1].content) as {
       perception: { nearbyBlocks: unknown[] }
     }
@@ -224,3 +225,11 @@ describe('OllamaProvider', () => {
     )
   })
 })
+
+function inputFor(agentName: string): BrainInput {
+  return {
+    ...brainInput,
+    perception: { ...brainInput.perception, agent: agentName },
+    state: { ...brainInput.state, agentName }
+  }
+}

@@ -1,7 +1,7 @@
 import {
   DECISION_JSON_SCHEMA,
   serializeBrainInput,
-  SYSTEM_INSTRUCTION
+  systemInstructionFor
 } from '../decisionContract.js'
 import type { LLMProvider, LLMRequestTiming } from '../provider.js'
 import type { BrainInput } from '../types.js'
@@ -53,7 +53,7 @@ export class OpenAIProvider implements LLMProvider {
       },
       body: JSON.stringify({
         model: this.model,
-        instructions: SYSTEM_INSTRUCTION,
+        instructions: systemInstructionFor(input.state.agentName),
         input: JSON.stringify(serializeBrainInput(input)),
         store: false,
         reasoning: { effort: 'low' },

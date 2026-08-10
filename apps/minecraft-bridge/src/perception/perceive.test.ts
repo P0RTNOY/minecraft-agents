@@ -8,6 +8,18 @@ import { Vec3 } from 'vec3'
 import { perceive } from './perceive.js'
 
 describe('perceive', () => {
+  it('shows other agent players while excluding only the exact self entity', () => {
+    const self = entity(1, 'player', 'Alice', new Vec3(0, 64, 0))
+    const bob = entity(2, 'player', 'Bob', new Vec3(2, 64, 0))
+    const charlie = entity(3, 'player', 'Charlie', new Vec3(4, 64, 0))
+    const bot = perceptionBot(self, { 1: self, 2: bob, 3: charlie })
+
+    assert.deepEqual(
+      perceive(bot).nearbyEntities.map(observation => observation.name),
+      ['Bob', 'Charlie']
+    )
+  })
+
   it('attaches registry categories and counts only safe edible inventory', () => {
     const self = entity(1, 'player', 'Alice', new Vec3(0, 64, 0))
     const creeper = entity(7, 'mob', 'creeper', new Vec3(3, 64, 0))
@@ -92,6 +104,31 @@ describe('perceive', () => {
     }])
   })
 })
+
+function perceptionBot(
+  self: Entity,
+  entities: Record<number, Entity>
+): Bot {
+  return {
+    username: self.username,
+    entity: self,
+    entities,
+    health: 20,
+    food: 20,
+    heldItem: null,
+    findBlocks: () => [],
+    findBlock: () => null,
+    blockAt: () => null,
+    recipesFor: () => [],
+    inventory: { items: () => [] },
+    registry: {
+      entitiesByName: {},
+      foodsByName: {},
+      itemsByName: {},
+      blocksByName: {}
+    }
+  } as unknown as Bot
+}
 
 function entity(
   id: number,
