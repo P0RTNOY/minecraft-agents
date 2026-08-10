@@ -166,6 +166,10 @@ export function createDecisionExecutor(
               collected: result.collected,
               blockBroken: result.blockBroken,
               dropDetected: result.dropDetected,
+              ...(result.requiredTool
+                ? { requiredTool: result.requiredTool }
+                : {}),
+              ...(result.tool ? { tool: result.tool } : {}),
               ...(result.reason ? { reason: result.reason } : {})
             }
           }
