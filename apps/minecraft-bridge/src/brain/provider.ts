@@ -8,6 +8,7 @@ export interface LLMRequestTiming {
   outputTokens?: number
   outputDurationMs?: number
   outputTokensPerSecond?: number
+  queueWaitMs?: number
 }
 
 export interface LLMProvider {
