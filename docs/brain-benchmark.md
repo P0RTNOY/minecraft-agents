@@ -139,3 +139,58 @@ LLM_PROVIDER=ollama LLM_MODEL=llama3.2:latest npm run benchmark:brain
 LLM_PROVIDER=ollama LLM_MODEL=qwen3:1.7b npm run benchmark:brain
 LLM_PROVIDER=ollama LLM_MODEL=qwen3:4b npm run benchmark:brain
 ```
+
+## M3.2 model capability evaluation and provider escalation
+
+Date: 2026-08-10
+
+This pass asks a narrower engineering question than the earlier comparisons: does a Minecraft-specialized local model make the unchanged eight-cycle bootstrap benchmark progress, and, if not, can the same controlled boundary be evaluated through OpenAI? The benchmark scenario, transition simulation, prompt, decision vocabulary, structural/context validation, repetition policy, and executor were not changed for these measurements.
+
+### Specialized local checkpoints
+
+The machine-pressure check was performed before selecting the larger checkpoint. The host has 16 GB RAM, showed 24% system-wide free memory with no throttled pages, and was already running Paper. The 4.0 GB Q3 checkpoint was therefore selected instead of the 8.5 GB Q8 checkpoint.
+
+| Provider / model | Checkpoint details | Valid | Grounded | Accepted | Progress | Goal completion | Mean / median latency | Prompt / output tokens | Mean load / output rate | Notable failure |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| Ollama / `sweaterdog/andy-4:micro-q8_0` | ID `12ec425c590d`; Qwen2 1.8B; Q8_0; 1.9 GB | 8/8 | 0/8 | 0/8 | 0/8 | 0/1 | 5,203 / 5,289 ms | 4,480 / 391 | 306 ms / 12 tok/s | Repeatedly requested an unavailable `oak_log` collection target; one reason invented prior coordinates and another leaked an unsupported command fragment. Context validation rejected every proposal. |
+| Ollama / `sweaterdog/andy-4:q3_k_m` | ID `ea89f867b0b6`; Llama 8.0B; Q3_K_M; 4.0 GB | 0/8 | 0/8 | 0/8 | 0/8 | 0/1 | 26,998 / 24,993 ms | 4,352 / 1,024 in Ollama debug envelopes | 2,262 ms / 6.6 tok/s in debug envelopes | Every request used all 128 evaluation tokens but returned no usable `message.content`; the provider failed closed with `Ollama response is missing message content.` |
+| OpenAI / configurable | Responses API adapter implemented; no model hard-coded | Not run | Not run | Not run | Not run | Not run | Not run | Not run | Not run | `OPENAI_API_KEY` was absent, triggering the explicit M3.2 stop condition. |
+
+The larger checkpoint's benchmark summary reports token/timing fields as `null` because each call throws after response metadata is captured but before the benchmark receives a decision. The separate enabled Ollama timing log supplied the totals shown above: eight requests at 544 prompt tokens and 128 evaluation tokens each. No reasoning content was read, parsed as a decision, or logged.
+
+Before the micro benchmark, a direct grounded sanity prompt described three inventory logs and only two current capabilities: craft `oak_planks` or explore. The model said sticks were needed first and proposed an unsupported recipe command. The cold request took approximately 8.65 seconds (168 prompt tokens, 26 output tokens). This was useful negative evidence before the full run: the model recognized crafting as relevant but did not follow the exact grounded capability set.
+
+Reproduce the measured local runs from `apps/minecraft-bridge`:
+
+```sh
+LLM_PROVIDER=ollama LLM_MODEL='sweaterdog/andy-4:micro-q8_0' LLM_DEBUG_TIMING=true npm run --silent benchmark:brain
+LLM_PROVIDER=ollama LLM_MODEL='sweaterdog/andy-4:q3_k_m' LLM_DEBUG_TIMING=true npm run --silent benchmark:brain
+```
+
+Both use the same Ollama settings as M3.1: `think: false`, `keep_alive: "10m"`, temperature `0.1`, `num_predict: 128`, `num_ctx: 4096`, and JSON Schema output.
+
+### OpenAI provider and model selection
+
+The new provider uses the current Responses API with `store: false`, no tools, no remote conversation state, low reasoning effort, a 128-token output ceiling, and strict Structured Outputs. OpenAI requires a root JSON object for strict schemas, while the shared decision contract is intentionally a top-level `anyOf`. The provider therefore transports that exact union inside one required `decision` property and unwraps it before returning `unknown`; the existing validator remains authoritative.
+
+The provider ignores non-message reasoning items, never requests a reasoning summary, redacts refusal details, reports only safe HTTP status codes, and parses standard `input_tokens` / `output_tokens` usage. HTTPS and credential-free base URLs are enforced. The implementation uses built-in `fetch` and adds no dependency.
+
+Current official model information confirms that [`gpt-5-mini`](https://developers.openai.com/api/docs/models/gpt-5-mini) supports both the Responses API and Structured Outputs and is positioned for cost-sensitive, low-latency, high-volume work. Its listed standard text pricing is $0.25 per million input tokens and $2.00 per million output tokens. It remains the first practical live candidate for this tiny decision benchmark; model selection stays entirely in `LLM_MODEL`. No request was made, so measured token usage and benchmark cost are both zero. If that first candidate later fails, only one stronger current model should be compared, following the [current model catalog](https://developers.openai.com/api/docs/models).
+
+The intended future command is:
+
+```sh
+LLM_PROVIDER=openai LLM_MODEL=gpt-5-mini npm run benchmark:brain
+```
+
+It intentionally fails closed without `OPENAI_API_KEY`. No key, credential file, or live response was created during M3.2.
+
+### Architecture diagnosis and recommendation
+
+No tested model completed bootstrap. The best general local candidate remains `llama3.2:latest` from M3.1 because it grounded 7/8 decisions, but it still produced zero progress. Among the Minecraft-specialized candidates, micro Q8 is the only one that returned schema-valid decisions; it is not usable for this goal because all eight were ungrounded. The larger Andy checkpoint exposed a model/provider-output compatibility failure rather than decision-quality evidence.
+
+The combined local evidence does not justify a planner or another architecture layer. It shows that the existing safety architecture correctly contains hallucinated targets and empty provider responses, while the models tested so far do not choose the exact available crafting capability. It does **not** prove that the current architecture can complete bootstrap: the required strong remote comparison could not run. The correct classification is therefore **inconclusive because OpenAI credentials were unavailable**, with strong evidence of local model-capability and Andy compatibility limitations but no reproduced architecture defect.
+
+No architecture fix was made. The only runtime addition is a provider-neutral OpenAI adapter behind the same `unknown -> structural validation -> contextual validation -> repetition -> arbitration -> executor` flow. A live Minecraft run was also skipped because no newly tested model produced deterministic benchmark progress.
+
+Recommended next step: provide a usable `OPENAI_API_KEY` in a future M3.2 continuation and run only the fixed eight-request `gpt-5-mini` benchmark. If it makes clear progress, analyze that trace before any escalation; if it does not, compare one stronger suitable OpenAI model. Do not add planning, memory, new skills, or decision types without that evidence.

@@ -41,20 +41,20 @@
 - Modify: `apps/minecraft-bridge/src/brain/config.test.ts`
 - Modify: `.env.example`
 
-- [ ] Consult current official OpenAI Responses API and model documentation.
-- [ ] Write failing tests for explicit provider selection, missing credentials, HTTPS-only credential transport, strict structured output, bounded generation, no tools, no reasoning summaries, safe HTTP errors, refusal/malformed responses, and usage parsing.
-- [ ] Run focused tests and confirm failures are caused by missing OpenAI support.
-- [ ] Implement the smallest `OpenAIProvider implements LLMProvider` using injected `fetch`, the shared system instruction, serialized `BrainInput`, and `DECISION_JSON_SCHEMA`.
-- [ ] Return only parsed output JSON as `unknown`; expose only non-sensitive usage timing metadata through `getLastTiming()`.
-- [ ] Run focused and full validation, inspect the complete diff, commit `feat: add OpenAI Brain provider`, and push normally.
+- [x] Consult current official OpenAI Responses API and model documentation.
+- [x] Write failing tests for explicit provider selection, missing credentials, HTTPS-only credential transport, strict structured output, bounded generation, no tools, no reasoning summaries, safe HTTP errors, refusal/malformed responses, and usage parsing.
+- [x] Run focused tests and confirm failures are caused by missing OpenAI support.
+- [x] Implement the smallest `OpenAIProvider implements LLMProvider` using injected `fetch`, the shared system instruction, serialized `BrainInput`, and `DECISION_JSON_SCHEMA`.
+- [x] Return only parsed output JSON as `unknown`; expose only non-sensitive usage timing metadata through `getLastTiming()`.
+- [x] Run focused and full validation, inspect the complete diff, commit `feat: add OpenAI Brain provider`, and push normally.
 
 ### Task 3: Minimum remote comparison and architecture diagnosis
 
-- [ ] Check for `OPENAI_API_KEY` without printing its value.
-- [ ] If a key exists, run the same fixed eight-cycle bootstrap benchmark with one currently supported practical model; do not tune the scenario per provider.
-- [ ] If no key exists, stop remote execution after offline provider validation and record the explicit limitation.
-- [ ] Run an isolated live Minecraft test only if a model first demonstrates benchmark progress and the existing server is safe to use.
-- [ ] Classify the evidence as model-capability, architecture, compatibility, or inconclusive; do not repair speculative defects.
+- [x] Check for `OPENAI_API_KEY` without printing its value.
+- [x] Resolve remote execution through the specified stop condition: no key exists, so no live API request was made.
+- [x] Stop remote execution after offline provider validation and record the explicit limitation.
+- [x] Skip an isolated live Minecraft test because no newly tested model demonstrated benchmark progress.
+- [x] Classify the evidence as model-capability, architecture, compatibility, or inconclusive; do not repair speculative defects.
 
 ### Task 4: Evidence, review, and completion
 
@@ -62,9 +62,9 @@
 
 - Modify: `docs/brain-benchmark.md`
 
-- [ ] Add the exact M3.2 commands, checkpoint identities, metrics, observed failure patterns, compatibility notes, and OpenAI credential limitation.
-- [ ] Confirm benchmark source files and the decision vocabulary are unchanged.
-- [ ] Review provider-boundary safety, secret handling, structured-output strictness, validation/arbitration preservation, and scope.
-- [ ] Run the complete test/typecheck/build/whitespace gate plus a secret-pattern audit.
+- [x] Add the exact M3.2 commands, checkpoint identities, metrics, observed failure patterns, compatibility notes, and OpenAI credential limitation.
+- [x] Confirm benchmark source files and the decision vocabulary are unchanged.
+- [x] Review provider-boundary safety, secret handling, structured-output strictness, validation/arbitration preservation, and scope.
+- [x] Run the complete test/typecheck/build/whitespace gate plus a secret-pattern audit.
 - [ ] Commit `docs: record M3.2 capability evaluation`, push normally, and verify local/remote branch equality.
 - [ ] Stop after M3.2 and report changed files, commits, benchmark evidence, diagnosis, limitations, and whether the next milestone is justified.
