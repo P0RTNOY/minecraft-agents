@@ -748,7 +748,8 @@ function memoryDouble(overrides: Partial<AgentMemory> = {}): AgentMemory {
       reflectionCalls: 0,
       reflectionFailures: 0,
       reflectionInputTokens: 0,
-      reflectionOutputTokens: 0
+      reflectionOutputTokens: 0,
+      estimatedMemoryPromptTokens: 0
     }),
     ...overrides
   }

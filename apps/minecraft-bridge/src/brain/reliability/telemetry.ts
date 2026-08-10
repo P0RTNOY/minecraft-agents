@@ -2,6 +2,7 @@ import type { BrainCycleResult } from '../../agent/loop.js'
 import type { InventoryItemSnapshot } from '../../skills/inventory.js'
 import type { GoalProgress } from '../goals.js'
 import type { LLMProvider, LLMRequestTiming } from '../provider.js'
+import type { MemoryMetrics } from '../../memory/coordinator.js'
 
 export type BootstrapFailureReason =
   | 'model_decision_failure'
@@ -50,6 +51,17 @@ export interface BootstrapRunResult {
   manualOverrides: number
   inputTokens: number
   outputTokens: number
+  memoryEpisodesCreated: number
+  memoryEpisodesRetrieved: number
+  memorySemanticFactsCreated: number
+  memorySemanticFactsRetrieved: number
+  memoryRetrievalFailures: number
+  memoryPersistenceFailures: number
+  reflectionCalls: number
+  reflectionFailures: number
+  reflectionInputTokens: number
+  reflectionOutputTokens: number
+  estimatedMemoryPromptTokens: number
   llmLatenciesMs: number[]
   actionCounts: Record<string, number>
   skillFailureReasons: Record<string, number>
@@ -83,6 +95,18 @@ export interface BootstrapReliabilitySummary {
   totalOutputTokens: number
   averageInputTokens: number
   averageOutputTokens: number
+  totalMemoryEpisodesCreated: number
+  totalMemoryEpisodesRetrieved: number
+  totalMemorySemanticFactsCreated: number
+  totalMemorySemanticFactsRetrieved: number
+  totalMemoryRetrievalFailures: number
+  totalMemoryPersistenceFailures: number
+  totalReflectionCalls: number
+  totalReflectionFailures: number
+  reflectionFailureRate: number
+  totalReflectionInputTokens: number
+  totalReflectionOutputTokens: number
+  totalEstimatedMemoryPromptTokens: number
   mostCommonFailureReason: BootstrapFailureReason | null
 }
 
@@ -93,6 +117,7 @@ export class BootstrapRunTelemetry {
   private decisionCount = 0
   private inputTokens = 0
   private outputTokens = 0
+  private memoryMetrics: MemoryMetrics = emptyMemoryMetrics()
   private readonly llmLatenciesMs: number[] = []
   private progressActionCount = 0
   private noProgressCount = 0
@@ -179,6 +204,10 @@ export class BootstrapRunTelemetry {
     this.noteFailure('reflex_interruption')
   }
 
+  recordMemoryMetrics(metrics: MemoryMetrics): void {
+    this.memoryMetrics = { ...metrics }
+  }
+
   finish(options: {
     completedAt: number
     finalProgress: GoalProgress | null
@@ -217,6 +246,18 @@ export class BootstrapRunTelemetry {
       manualOverrides: this.manualOverrides,
       inputTokens: this.inputTokens,
       outputTokens: this.outputTokens,
+      memoryEpisodesCreated: this.memoryMetrics.episodesCreated,
+      memoryEpisodesRetrieved: this.memoryMetrics.episodesRetrieved,
+      memorySemanticFactsCreated: this.memoryMetrics.semanticFactsCreated,
+      memorySemanticFactsRetrieved: this.memoryMetrics.semanticFactsRetrieved,
+      memoryRetrievalFailures: this.memoryMetrics.retrievalFailures,
+      memoryPersistenceFailures: this.memoryMetrics.persistenceFailures,
+      reflectionCalls: this.memoryMetrics.reflectionCalls,
+      reflectionFailures: this.memoryMetrics.reflectionFailures,
+      reflectionInputTokens: this.memoryMetrics.reflectionInputTokens,
+      reflectionOutputTokens: this.memoryMetrics.reflectionOutputTokens,
+      estimatedMemoryPromptTokens:
+        this.memoryMetrics.estimatedMemoryPromptTokens,
       llmLatenciesMs: [...this.llmLatenciesMs],
       actionCounts: { ...this.actionCounts },
       skillFailureReasons: { ...this.skillFailureReasons },
@@ -338,8 +379,51 @@ export function summarizeBootstrapRuns(
     totalOutputTokens: sum(valid, run => run.outputTokens),
     averageInputTokens: ratio(sum(valid, run => run.inputTokens), valid.length),
     averageOutputTokens: ratio(sum(valid, run => run.outputTokens), valid.length),
+    totalMemoryEpisodesCreated: sum(valid, run => run.memoryEpisodesCreated),
+    totalMemoryEpisodesRetrieved: sum(valid, run => run.memoryEpisodesRetrieved),
+    totalMemorySemanticFactsCreated: sum(
+      valid,
+      run => run.memorySemanticFactsCreated
+    ),
+    totalMemorySemanticFactsRetrieved: sum(
+      valid,
+      run => run.memorySemanticFactsRetrieved
+    ),
+    totalMemoryRetrievalFailures: sum(valid, run => run.memoryRetrievalFailures),
+    totalMemoryPersistenceFailures: sum(
+      valid,
+      run => run.memoryPersistenceFailures
+    ),
+    totalReflectionCalls: sum(valid, run => run.reflectionCalls),
+    totalReflectionFailures: sum(valid, run => run.reflectionFailures),
+    reflectionFailureRate: ratio(
+      sum(valid, run => run.reflectionFailures),
+      sum(valid, run => run.reflectionCalls)
+    ),
+    totalReflectionInputTokens: sum(valid, run => run.reflectionInputTokens),
+    totalReflectionOutputTokens: sum(valid, run => run.reflectionOutputTokens),
+    totalEstimatedMemoryPromptTokens: sum(
+      valid,
+      run => run.estimatedMemoryPromptTokens
+    ),
     mostCommonFailureReason: [...failureCounts.entries()]
       .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))[0]?.[0] ?? null
+  }
+}
+
+function emptyMemoryMetrics(): MemoryMetrics {
+  return {
+    episodesCreated: 0,
+    episodesRetrieved: 0,
+    semanticFactsCreated: 0,
+    semanticFactsRetrieved: 0,
+    retrievalFailures: 0,
+    persistenceFailures: 0,
+    reflectionCalls: 0,
+    reflectionFailures: 0,
+    reflectionInputTokens: 0,
+    reflectionOutputTokens: 0,
+    estimatedMemoryPromptTokens: 0
   }
 }
 

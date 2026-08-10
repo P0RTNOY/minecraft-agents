@@ -3,6 +3,7 @@ import { describe, it } from 'node:test'
 
 import type { BrainCycleResult } from '../../agent/loop.js'
 import type { PerceptionSnapshot } from '../../perception/types.js'
+import type { MemoryMetrics } from '../../memory/coordinator.js'
 import { runBootstrapTrials } from './runner.js'
 
 describe('runBootstrapTrials', () => {
@@ -23,7 +24,8 @@ describe('runBootstrapTrials', () => {
           completed = true
           return executed()
         },
-        observe: () => perception(completed)
+        observe: () => perception(completed),
+        memoryMetrics: () => memoryMetrics({ episodesCreated: 1 })
       })
     })
 
@@ -33,6 +35,7 @@ describe('runBootstrapTrials', () => {
     ])
     assert.equal(results.runs.length, 2)
     assert.equal(results.runs.every(run => run.goalCompleted), true)
+    assert.equal(results.runs.every(run => run.memoryEpisodesCreated === 1), true)
   })
 
   it('records timeout, provider failure, cleanup failure, and every attempted run', async () => {
@@ -59,6 +62,23 @@ describe('runBootstrapTrials', () => {
 
 function executed(): BrainCycleResult {
   return { status: 'executed', decision: { action: 'idle', reason: 'Done.' }, result: { success: true, action: 'idle', status: 'completed', summary: 'done' } }
+}
+
+function memoryMetrics(overrides: Partial<MemoryMetrics> = {}): MemoryMetrics {
+  return {
+    episodesCreated: 0,
+    episodesRetrieved: 0,
+    semanticFactsCreated: 0,
+    semanticFactsRetrieved: 0,
+    retrievalFailures: 0,
+    persistenceFailures: 0,
+    reflectionCalls: 0,
+    reflectionFailures: 0,
+    reflectionInputTokens: 0,
+    reflectionOutputTokens: 0,
+    estimatedMemoryPromptTokens: 0,
+    ...overrides
+  }
 }
 
 function perception(completed: boolean): PerceptionSnapshot {

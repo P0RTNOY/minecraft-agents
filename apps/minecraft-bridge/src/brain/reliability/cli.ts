@@ -1,5 +1,6 @@
-import { writeFile } from 'node:fs/promises'
-import { resolve } from 'node:path'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
 
 import mineflayer, { type Bot } from 'mineflayer'
 import { pathfinder } from 'mineflayer-pathfinder'
@@ -13,6 +14,15 @@ import { createLLMProvider } from '../providers/index.js'
 import { perceive } from '../../perception/perceive.js'
 import { createDefaultDecisionExecutor } from '../../skills/execute.js'
 import { ReflexLoop } from '../../survival/reflexLoop.js'
+import {
+  AgentMemoryCoordinator,
+  type AgentMemory
+} from '../../memory/coordinator.js'
+import { MemoryEventRecorder } from '../../memory/recorder.js'
+import { MemoryReflector } from '../../memory/reflection.js'
+import { OpenAIReflectionProvider } from '../../memory/providers/openaiReflection.js'
+import { AtomicJsonMemoryStore } from '../../memory/store.js'
+import type { MemoryIdentity } from '../../memory/types.js'
 import {
   BOOTSTRAP_TEST_AREA,
   bootstrapPlatformCommands,
@@ -28,6 +38,7 @@ interface LiveContext {
   bot: Bot
   state: AgentState
   watchdogStart: number
+  memory: AgentMemory | null
 }
 
 const runs = readPositiveInteger(process.env.BOOTSTRAP_RUNS, 5, 'BOOTSTRAP_RUNS')
@@ -46,6 +57,9 @@ const contexts = new Map<string, LiveContext>()
 let originalPosition: { x: number, y: number, z: number } | null = null
 
 async function main(): Promise<void> {
+  const experimentMemoryDirectory = await mkdtemp(
+    join(tmpdir(), 'minecraft-agents-bootstrap-memory-')
+  )
   try {
     await paper.start()
     await paper.runCommands(
@@ -62,12 +76,21 @@ async function main(): Promise<void> {
     prepare: async runId => {
       const bot = await connectAlice()
       const state = createAgentState('Alice')
+      const context: LiveContext = {
+        bot,
+        state,
+        watchdogStart: paper.watchdogCount,
+        memory: null
+      }
+      contexts.set(runId, context)
+      context.memory = config.memoryEnabled
+        ? await createTrialMemory(runId, experimentMemoryDirectory)
+        : null
       originalPosition ??= {
         x: bot.entity.position.x,
         y: bot.entity.position.y,
         z: bot.entity.position.z
       }
-      contexts.set(runId, { bot, state, watchdogStart: paper.watchdogCount })
       const marker = `${runId}_prepared`
       const ready = waitForMessage(bot, marker)
       for (const command of bootstrapRunResetCommands()) paper.send(command)
@@ -94,6 +117,7 @@ async function main(): Promise<void> {
     },
     createTrial: (runId, telemetry) => {
       const context = requireContext(runId)
+      const memory = context.memory
       const provider = instrumentProvider(createLLMProvider(config), telemetry)
       const arbiter = new ActionArbiter()
       const loop = new AutonomousAgentLoop({
@@ -102,7 +126,8 @@ async function main(): Promise<void> {
         arbiter,
         provider,
         intervalMs: config.tickIntervalMs,
-        execute: createDefaultDecisionExecutor({ explorationRadius: config.explorationRadius })
+        execute: createDefaultDecisionExecutor({ explorationRadius: config.explorationRadius }),
+        ...(memory ? { memory } : {})
       })
       const reflexLoop = new ReflexLoop({
         bot: context.bot,
@@ -117,7 +142,10 @@ async function main(): Promise<void> {
           return loop.runCycle()
         },
         observe: () => perceive(context.bot),
-        infrastructureInvalid: () => paper.watchdogCount > context.watchdogStart
+        infrastructureInvalid: () => paper.watchdogCount > context.watchdogStart,
+        ...(memory
+          ? { memoryMetrics: () => memory.metrics() }
+          : {})
       }
     },
     cleanup: async runId => {
@@ -143,16 +171,20 @@ async function main(): Promise<void> {
     if (outputPath) await writeFile(resolve(outputPath), serialized, { mode: 0o600 })
   } finally {
     for (const context of contexts.values()) {
-      context.bot.quit('bootstrap harness cleanup')
+      await disconnect(context.bot)
     }
     contexts.clear()
     try {
-      await paper.runCommands(
-        bootstrapWorldCleanupCommands(),
-        'bootstrap_cleanup_complete'
-      )
+      try {
+        await paper.runCommands(
+          bootstrapWorldCleanupCommands(),
+          'bootstrap_cleanup_complete'
+        )
+      } finally {
+        await paper.stop()
+      }
     } finally {
-      await paper.stop()
+      await rm(experimentMemoryDirectory, { recursive: true })
     }
   }
 }
@@ -195,6 +227,40 @@ function requireContext(runId: string): LiveContext {
   const context = contexts.get(runId)
   if (!context) throw new Error(`Missing live context for ${runId}.`)
   return context
+}
+
+async function createTrialMemory(
+  runId: string,
+  directory: string
+): Promise<AgentMemory> {
+  const identity: MemoryIdentity = {
+    agentId: 'Alice',
+    worldId: `bootstrap-${runId}`
+  }
+  const store = new AtomicJsonMemoryStore({
+    filePath: join(directory, `${runId}.json`),
+    identity
+  })
+  await store.open()
+  const reflector = config.memoryReflection
+    ? new MemoryReflector({
+        store,
+        provider: new OpenAIReflectionProvider({
+          baseUrl: config.openaiBaseUrl,
+          apiKey: config.openaiApiKey,
+          model: config.memoryReflectionModel
+        })
+      })
+    : null
+  return new AgentMemoryCoordinator({
+    store,
+    recorder: new MemoryEventRecorder({ identity }),
+    identity,
+    episodeLimit: config.memoryEpisodeLimit,
+    factLimit: config.memoryFactLimit,
+    debug: config.debugMemory,
+    ...(reflector ? { reflector } : {})
+  })
 }
 
 function readPositiveInteger(value: string | undefined, fallback: number, name: string): number {

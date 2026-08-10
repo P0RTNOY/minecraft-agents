@@ -59,6 +59,7 @@ export interface MemoryMetrics {
   reflectionFailures: number
   reflectionInputTokens: number
   reflectionOutputTokens: number
+  estimatedMemoryPromptTokens: number
 }
 
 export interface MemoryRetrievalResult {
@@ -113,7 +114,8 @@ export class AgentMemoryCoordinator implements AgentMemory {
     reflectionCalls: 0,
     reflectionFailures: 0,
     reflectionInputTokens: 0,
-    reflectionOutputTokens: 0
+    reflectionOutputTokens: 0,
+    estimatedMemoryPromptTokens: 0
   }
 
   constructor(options: AgentMemoryCoordinatorOptions) {
@@ -148,6 +150,9 @@ export class AgentMemoryCoordinator implements AgentMemory {
       }
       this.counters.episodesRetrieved += episodes.length
       this.counters.semanticFactsRetrieved += facts.length
+      this.counters.estimatedMemoryPromptTokens += Math.ceil(
+        JSON.stringify(context).length / 4
+      )
       if (this.debug) {
         this.logger.log(
           `🧠 Memory: retrieved ${episodes.length} episodes / ${facts.length} facts`

@@ -171,7 +171,10 @@ describe('AgentMemoryCoordinator', () => {
       reflectionCalls: 0,
       reflectionFailures: 0,
       reflectionInputTokens: 0,
-      reflectionOutputTokens: 0
+      reflectionOutputTokens: 0,
+      estimatedMemoryPromptTokens: Math.ceil(
+        JSON.stringify(retrieved.context).length / 4
+      )
     })
   })
 
@@ -280,7 +283,8 @@ describe('AgentMemoryCoordinator', () => {
       reflectionCalls: 1,
       reflectionFailures: 0,
       reflectionInputTokens: 90,
-      reflectionOutputTokens: 20
+      reflectionOutputTokens: 20,
+      estimatedMemoryPromptTokens: 0
     })
   })
 

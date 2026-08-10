@@ -1,6 +1,7 @@
 import type { BrainCycleResult } from '../../agent/loop.js'
 import { computeGoalProgress } from '../goals.js'
 import type { PerceptionSnapshot } from '../../perception/types.js'
+import type { MemoryMetrics } from '../../memory/coordinator.js'
 import {
   BootstrapRunTelemetry,
   summarizeBootstrapRuns,
@@ -12,6 +13,7 @@ export interface BootstrapTrial {
   runCycle(): Promise<BrainCycleResult>
   observe(): PerceptionSnapshot
   infrastructureInvalid?(): boolean
+  memoryMetrics?(): MemoryMetrics
 }
 
 export interface BootstrapTrialsOptions {
@@ -86,6 +88,14 @@ export async function runBootstrapTrials(
     } finally {
       try {
         await options.cleanup(runId)
+      } catch {
+        infrastructureInvalid = true
+      }
+    }
+
+    if (trial?.memoryMetrics) {
+      try {
+        telemetry.recordMemoryMetrics(trial.memoryMetrics())
       } catch {
         infrastructureInvalid = true
       }

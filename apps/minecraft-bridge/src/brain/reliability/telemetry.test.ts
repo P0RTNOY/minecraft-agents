@@ -26,6 +26,19 @@ describe('BootstrapRunTelemetry', () => {
     })())
 
     await wrapped.decide({} as never)
+    telemetry.recordMemoryMetrics({
+      episodesCreated: 2,
+      episodesRetrieved: 3,
+      semanticFactsCreated: 1,
+      semanticFactsRetrieved: 2,
+      retrievalFailures: 0,
+      persistenceFailures: 0,
+      reflectionCalls: 1,
+      reflectionFailures: 0,
+      reflectionInputTokens: 90,
+      reflectionOutputTokens: 12,
+      estimatedMemoryPromptTokens: 44
+    })
     timing = { promptTokens: 80, outputTokens: 10 }
     await wrapped.decide({} as never)
     telemetry.recordCycle(executed('craft_item', true, undefined, {
@@ -53,6 +66,17 @@ describe('BootstrapRunTelemetry', () => {
     assert.equal(result.decisionCount, 2)
     assert.equal(result.inputTokens, 200)
     assert.equal(result.outputTokens, 30)
+    assert.equal(result.memoryEpisodesCreated, 2)
+    assert.equal(result.memoryEpisodesRetrieved, 3)
+    assert.equal(result.memorySemanticFactsCreated, 1)
+    assert.equal(result.memorySemanticFactsRetrieved, 2)
+    assert.equal(result.reflectionCalls, 1)
+    assert.equal(result.reflectionFailures, 0)
+    assert.equal(result.reflectionInputTokens, 90)
+    assert.equal(result.reflectionOutputTokens, 12)
+    assert.equal(result.estimatedMemoryPromptTokens, 44)
+    assert.equal('memoryPrompt' in result, false)
+    assert.equal('providerResponse' in result, false)
     assert.deepEqual(result.llmLatenciesMs, [25, 25])
     assert.equal(result.progressActionCount, 1)
     assert.equal(result.noProgressCount, 1)
@@ -81,6 +105,11 @@ describe('BootstrapRunTelemetry', () => {
     const summary = summarizeBootstrapRuns([result])
     assert.equal(summary.craftRetryRate, 0.5)
     assert.equal(summary.craftRetrySuccessRate, 1)
+    assert.equal(summary.totalMemoryEpisodesCreated, 2)
+    assert.equal(summary.totalMemoryEpisodesRetrieved, 3)
+    assert.equal(summary.totalReflectionCalls, 1)
+    assert.equal(summary.reflectionFailureRate, 0)
+    assert.equal(summary.totalEstimatedMemoryPromptTokens, 44)
     assert.equal(result.goalCompleted, true)
     assert.equal(result.success, true)
   })
@@ -118,7 +147,21 @@ describe('BootstrapRunTelemetry', () => {
     const failed = createTelemetry('failed').finish({
       completedAt: 4, finalProgress: progress(false), finalInventory: [], timedOut: true
     })
-    const invalid = createTelemetry('invalid').finish({
+    const invalidTelemetry = createTelemetry('invalid')
+    invalidTelemetry.recordMemoryMetrics({
+      episodesCreated: 99,
+      episodesRetrieved: 99,
+      semanticFactsCreated: 99,
+      semanticFactsRetrieved: 99,
+      retrievalFailures: 99,
+      persistenceFailures: 99,
+      reflectionCalls: 99,
+      reflectionFailures: 99,
+      reflectionInputTokens: 99,
+      reflectionOutputTokens: 99,
+      estimatedMemoryPromptTokens: 99
+    })
+    const invalid = invalidTelemetry.finish({
       completedAt: 6, finalProgress: progress(false), finalInventory: [], infrastructureInvalid: true
     })
 
@@ -129,6 +172,8 @@ describe('BootstrapRunTelemetry', () => {
     assert.equal(summary.infrastructureInvalidRuns, 1)
     assert.equal(summary.goalCompletionRate, 0.5)
     assert.equal(summary.mostCommonFailureReason, 'timeout')
+    assert.equal(summary.totalMemoryEpisodesCreated, 0)
+    assert.equal(summary.reflectionFailureRate, 0)
   })
 })
 
