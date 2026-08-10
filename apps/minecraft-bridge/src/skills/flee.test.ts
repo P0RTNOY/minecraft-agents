@@ -8,6 +8,7 @@ import { createAgentState } from '../agent/state.js'
 import type { FleeDecision } from '../survival/types.js'
 import {
   createFleeSkill,
+  findSafeEscapeDestination,
   type FleeNavigator
 } from './flee.js'
 
@@ -114,6 +115,23 @@ describe('fleeFromEntity', () => {
     assert.equal(result.success, false)
     assert.equal(result.reason, 'no_safe_destination')
     assert.equal(navigationStarted, false)
+  })
+
+  it('searches nearby vertical terrain when the direct escape point is blocked', () => {
+    const bot = createBot()
+    bot.blockAt = position => {
+      const safeColumn = position.x === 12 && position.z === 1
+
+      return {
+        name: 'air',
+        boundingBox: safeColumn && position.y < 63 ? 'block' : 'empty'
+      } as ReturnType<Bot['blockAt']>
+    }
+
+    assert.deepEqual(
+      findSafeEscapeDestination(bot, bot.entities[7].position),
+      new Vec3(12, 63, 1)
+    )
   })
 
   it('reports path replacement as cancellation', async () => {

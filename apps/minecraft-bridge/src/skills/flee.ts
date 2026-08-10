@@ -130,6 +130,13 @@ export function findSafeEscapeDestination(
   const directionZ = magnitude === 0 ? 0 : awayZ / magnitude
   const angleOffsets = [0, Math.PI / 4, -Math.PI / 4, Math.PI / 2, -Math.PI / 2]
   const distances = [12, 8, 5]
+  const horizontalOffsets = [
+    [0, 0],
+    [1, 0], [-1, 0], [0, 1], [0, -1],
+    [1, 1], [1, -1], [-1, 1], [-1, -1],
+    [2, 0], [-2, 0], [0, 2], [0, -2]
+  ] as const
+  const verticalOffsets = [0, 1, -1, 2, -2]
 
   for (const distance of distances) {
     for (const angle of angleOffsets) {
@@ -137,19 +144,41 @@ export function findSafeEscapeDestination(
       const sin = Math.sin(angle)
       const rotatedX = (directionX * cos) - (directionZ * sin)
       const rotatedZ = (directionX * sin) + (directionZ * cos)
-      const candidate = new Vector(
+      const base = new Vector(
         Math.floor(origin.x + (rotatedX * distance)),
         Math.floor(origin.y),
         Math.floor(origin.z + (rotatedZ * distance))
       )
 
-      if (isSafeDestination(bot, candidate)) {
-        return candidate
+      for (const [offsetX, offsetZ] of horizontalOffsets) {
+        for (const offsetY of verticalOffsets) {
+          const candidate = base.offset(offsetX, offsetY, offsetZ)
+
+          if (
+            isFartherFromThreat(candidate, origin, threatPosition) &&
+            isSafeDestination(bot, candidate)
+          ) {
+            return candidate
+          }
+        }
       }
     }
   }
 
   return null
+}
+
+function isFartherFromThreat(
+  candidate: Vec3,
+  origin: Vec3,
+  threat: Vec3
+): boolean {
+  return horizontalDistance(candidate, threat) >
+    horizontalDistance(origin, threat)
+}
+
+function horizontalDistance(left: Vec3, right: Vec3): number {
+  return Math.hypot(left.x - right.x, left.z - right.z)
 }
 
 function isSafeDestination(bot: Bot, position: Vec3): boolean {
