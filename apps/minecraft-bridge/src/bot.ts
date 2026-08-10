@@ -2,6 +2,7 @@ import mineflayer from 'mineflayer'
 import { pathfinder } from 'mineflayer-pathfinder'
 
 import { ActionArbiter } from './agent/actionArbiter.js'
+import { cancelAgentAction } from './agent/cancelAction.js'
 import { AutonomousAgentLoop } from './agent/loop.js'
 import { createAgentState } from './agent/state.js'
 import {
@@ -73,16 +74,33 @@ bot.once('spawn', () => {
     setTimeout(() => {
       console.log(`\n👤 ${state.agentName} is looking for a nearby player...`)
 
-      const result = followNearestPlayer(bot, state, 'autonomous')
+      void arbiter.run({
+        source: 'autonomous',
+        cancel: () => cancelAgentAction(bot, state),
+        execute: async () => followNearestPlayer(
+          bot,
+          state,
+          'autonomous'
+        )
+      }).then(arbitration => {
+        if (arbitration.status === 'rejected') {
+          console.log('ℹ️ Nearby-player follow skipped for a priority action')
+          return
+        }
 
-      if (!result.success || !result.target) {
-        console.log('❌ No nearby player found')
-        return
-      }
+        const result = arbitration.value
 
-      console.log(`👀 Found player: ${result.target}`)
-      bot.chat(`Hi ${result.target}! I'm following you.`)
-      console.log(`🚶 ${state.agentName} is now following ${result.target}`)
+        if (!result.success || !result.target) {
+          console.log('❌ No nearby player found')
+          return
+        }
+
+        console.log(`👀 Found player: ${result.target}`)
+        bot.chat(`Hi ${result.target}! I'm following you.`)
+        console.log(`🚶 ${state.agentName} is now following ${result.target}`)
+      }).catch(error => {
+        console.error('❌ Nearby-player follow failed:', error)
+      })
     }, 4000)
   }
 })
