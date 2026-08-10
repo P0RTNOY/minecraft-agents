@@ -367,6 +367,7 @@ class MemoryStoreDouble implements MemoryStore {
   failure: Error | null = null
 
   async open(): Promise<void> {}
+  async flush(): Promise<void> {}
 
   async addEpisode(value: EpisodicMemory): Promise<void> {
     this.maybeFail()

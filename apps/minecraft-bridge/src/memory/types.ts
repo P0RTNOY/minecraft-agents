@@ -129,6 +129,7 @@ export interface MemoryDocumentV1 {
 
 export interface MemoryStore {
   open(): Promise<void>
+  flush(): Promise<void>
   addEpisode(episode: EpisodicMemory): Promise<void>
   listRecentEpisodes(limit: number): Promise<EpisodicMemory[]>
   findRelevantEpisodes(query: MemoryQuery): Promise<EpisodicMemory[]>

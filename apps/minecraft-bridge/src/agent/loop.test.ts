@@ -738,6 +738,7 @@ function memoryDouble(overrides: Partial<AgentMemory> = {}): AgentMemory {
       context: { recentEpisodes: [], relevantFacts: [] }
     }),
     record: async () => ({ episodesCreated: 0, semanticFactsCreated: 0 }),
+    flush: async () => {},
     metrics: () => ({
       episodesCreated: 0,
       episodesRetrieved: 0,

@@ -76,6 +76,7 @@ export interface MemoryRecordResult {
 export interface AgentMemory {
   retrieve(input: BrainInputWithoutMemory): Promise<MemoryRetrievalResult>
   record(event: MemoryCycleEvent): Promise<MemoryRecordResult>
+  flush(): Promise<void>
   metrics(): MemoryMetrics
 }
 
@@ -229,6 +230,10 @@ export class AgentMemoryCoordinator implements AgentMemory {
 
   metrics(): MemoryMetrics {
     return { ...this.counters }
+  }
+
+  flush(): Promise<void> {
+    return this.store.flush()
   }
 
   private async considerReflection(): Promise<ReflectionAttemptResult> {

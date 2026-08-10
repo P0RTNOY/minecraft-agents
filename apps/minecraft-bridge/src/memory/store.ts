@@ -72,6 +72,7 @@ export class AtomicJsonMemoryStore implements MemoryStore {
   private readonly fileSystem: AtomicMemoryFileSystem
   private document: MemoryDocumentV1 | null = null
   private mutationQueue: Promise<void> = Promise.resolve()
+  private flushBoundary: Promise<void> = Promise.resolve()
 
   constructor(options: AtomicJsonMemoryStoreOptions) {
     if (!options.filePath.trim()) {
@@ -130,6 +131,10 @@ export class AtomicJsonMemoryStore implements MemoryStore {
       )
     }
     this.document = this.validated(parsed)
+  }
+
+  async flush(): Promise<void> {
+    await this.flushBoundary
   }
 
   addEpisode(episode: EpisodicMemory): Promise<void> {
@@ -214,6 +219,7 @@ export class AtomicJsonMemoryStore implements MemoryStore {
       this.document = validated
     })
     this.mutationQueue = operation.catch(() => {})
+    this.flushBoundary = operation
     return operation
   }
 

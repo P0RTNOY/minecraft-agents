@@ -127,6 +127,10 @@ describe('AtomicJsonMemoryStore', () => {
       () => failing.addEpisode(episode({ id: 'not-persisted' })),
       /simulated atomic rename failure/
     )
+    await assert.rejects(
+      () => failing.flush(),
+      /simulated atomic rename failure/
+    )
     assert.equal(await readFile(filePath, 'utf8'), before)
     assert.deepEqual(
       await failing.listRecentEpisodes(4),

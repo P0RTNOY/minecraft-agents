@@ -280,6 +280,7 @@ class StoreDouble implements MemoryStore {
   }
 
   async open(): Promise<void> {}
+  async flush(): Promise<void> {}
   async addEpisode(value: EpisodicMemory): Promise<void> { this.episodes.push(value) }
   async listRecentEpisodes(limit: number): Promise<EpisodicMemory[]> {
     return [...this.episodes]
