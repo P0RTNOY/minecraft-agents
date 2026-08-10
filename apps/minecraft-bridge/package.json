@@ -4,6 +4,7 @@
   "main": "index.js",
   "scripts": {
     "benchmark:brain": "tsx src/brain/benchmark/cli.ts",
+    "benchmark:bootstrap": "tsx src/brain/reliability/cli.ts",
     "test": "node --import tsx --test \"src/**/*.test.ts\"",
     "dev": "tsx src/bot.ts",
     "build": "tsc",
