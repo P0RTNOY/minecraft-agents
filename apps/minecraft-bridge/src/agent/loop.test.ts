@@ -7,6 +7,7 @@ import {
   createAgentState,
   markManualOverride
 } from './state.js'
+import { ActionArbiter } from './actionArbiter.js'
 import type { AgentDecision } from '../brain/types.js'
 import type { LLMProvider } from '../brain/provider.js'
 import {
@@ -196,6 +197,31 @@ describe('AutonomousAgentLoop', () => {
     assert.equal(executions, 0)
   })
 
+  it('discards a pending decision after a reflex interrupts its generation', async () => {
+    const decision = deferred<unknown>()
+    const arbiter = new ActionArbiter()
+    let executions = 0
+    const loop = createLoop({
+      arbiter,
+      provider: { decide: async () => decision.promise },
+      execute: async () => {
+        executions += 1
+        return successfulIdleResult()
+      }
+    })
+
+    const cycle = loop.runCycle()
+    await Promise.resolve()
+    arbiter.interrupt('reflex')
+    decision.resolve({ action: 'idle', reason: 'Wait.' })
+
+    assert.deepEqual(await cycle, {
+      status: 'skipped',
+      reason: 'priority_override'
+    })
+    assert.equal(executions, 0)
+  })
+
   it('does not interrupt an active manual skill on a later cycle', async () => {
     const state = createAgentState('Alice')
     let providerCalls = 0
@@ -222,6 +248,35 @@ describe('AutonomousAgentLoop', () => {
     })
     assert.equal(providerCalls, 0)
   })
+
+  for (const source of ['reflex', 'autonomous'] as const) {
+    it(`does not start an LLM cycle during an active ${source} skill`, async () => {
+      const state = createAgentState('Alice')
+      let providerCalls = 0
+      beginAgentAction(
+        state,
+        source === 'reflex' ? 'fleeing' : 'following',
+        source === 'reflex' ? 'flee_from_entity' : 'follow_player',
+        source === 'reflex' ? 'Escape creeper' : 'Follow Steve',
+        source
+      )
+      const loop = createLoop({
+        state,
+        provider: {
+          decide: async () => {
+            providerCalls += 1
+            return { action: 'idle', reason: 'Wait.' }
+          }
+        }
+      })
+
+      assert.deepEqual(await loop.runCycle(), {
+        status: 'skipped',
+        reason: 'action_in_progress'
+      })
+      assert.equal(providerCalls, 0)
+    })
+  }
 
   it('rejects repeated chat without executing it twice', async () => {
     let executions = 0

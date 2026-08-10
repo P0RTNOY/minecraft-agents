@@ -1,5 +1,7 @@
 import type { Bot } from 'mineflayer'
 
+import { ActionArbiter } from './actionArbiter.js'
+import { cancelAgentAction } from './cancelAction.js'
 import type { AgentState } from './state.js'
 import type { LLMProvider } from '../brain/provider.js'
 import {
@@ -36,6 +38,7 @@ export interface AgentLoopOptions {
   state: AgentState
   provider: LLMProvider
   intervalMs: number
+  arbiter?: ActionArbiter
   observe?: (bot: Bot) => PerceptionSnapshot
   execute?: DecisionExecutor
   validate?: (
@@ -53,7 +56,12 @@ export type BrainCycleResult =
     }
   | {
       status: 'skipped'
-      reason: 'cycle_in_progress' | 'manual_override' | 'manual_action_active'
+      reason:
+        | 'cycle_in_progress'
+        | 'manual_override'
+        | 'manual_action_active'
+        | 'action_in_progress'
+        | 'priority_override'
     }
   | { status: 'validation_failed'; issues: string[] }
   | {
@@ -70,6 +78,7 @@ export class AutonomousAgentLoop {
   private readonly state: AgentState
   private readonly provider: LLMProvider
   private readonly intervalMs: number
+  private readonly arbiter: ActionArbiter
   private readonly observe: (bot: Bot) => PerceptionSnapshot
   private readonly execute: DecisionExecutor
   private readonly validate: (
@@ -93,6 +102,7 @@ export class AutonomousAgentLoop {
     this.state = options.state
     this.provider = options.provider
     this.intervalMs = options.intervalMs
+    this.arbiter = options.arbiter ?? new ActionArbiter()
     this.observe = options.observe ?? perceive
     this.execute = options.execute ?? executeDecision
     this.validate = options.validate ?? validateDecision
@@ -124,8 +134,13 @@ export class AutonomousAgentLoop {
       return { status: 'skipped', reason: 'manual_action_active' }
     }
 
+    if (this.state.busy) {
+      return { status: 'skipped', reason: 'action_in_progress' }
+    }
+
     this.cycleInProgress = true
     const manualOverrideVersion = this.state.manualOverrideVersion
+    const actionGeneration = this.arbiter.captureGeneration()
     this.logger.log('🧠 Brain cycle')
 
     try {
@@ -195,7 +210,21 @@ export class AutonomousAgentLoop {
 
       let result: DecisionExecutionResult
       try {
-        result = await this.execute(this.bot, decision, this.state)
+        const arbitration = await this.arbiter.run({
+          source: 'autonomous',
+          expectedGeneration: actionGeneration,
+          cancel: () => cancelAgentAction(this.bot, this.state),
+          execute: () => this.execute(this.bot, decision, this.state)
+        })
+
+        if (arbitration.status === 'rejected') {
+          this.logger.log(
+            `ℹ️ Decision skipped because a ${arbitration.reason} action took priority`
+          )
+          return { status: 'skipped', reason: 'priority_override' }
+        }
+
+        result = arbitration.value
       } catch (error) {
         result = {
           success: false,
