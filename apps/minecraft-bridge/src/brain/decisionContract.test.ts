@@ -84,4 +84,12 @@ describe('Brain decision contract', () => {
     assert.doesNotMatch(contract, /"eat"/)
     assert.doesNotMatch(SYSTEM_INSTRUCTION, /flee_from_entity/)
   })
+
+  it('allows bounded exploration without accepting model-authored coordinates', () => {
+    const contract = JSON.stringify(DECISION_JSON_SCHEMA)
+
+    assert.match(contract, /\"explore\"/)
+    assert.doesNotMatch(contract, /coordinates|destination|position/)
+    assert.match(SYSTEM_INSTRUCTION, /explore/)
+  })
 })

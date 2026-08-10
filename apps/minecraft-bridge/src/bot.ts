@@ -15,6 +15,7 @@ import { registerChatCommands } from './commands/chatCommands.js'
 import { formatPerception } from './perception/format.js'
 import { perceive } from './perception/perceive.js'
 import { followNearestPlayer } from './skills/index.js'
+import { createDefaultDecisionExecutor } from './skills/execute.js'
 import { ReflexLoop } from './survival/reflexLoop.js'
 
 const agentName = 'Alice'
@@ -63,7 +64,10 @@ bot.once('spawn', () => {
         state,
         arbiter,
         provider,
-        intervalMs: config.tickIntervalMs
+        intervalMs: config.tickIntervalMs,
+        execute: createDefaultDecisionExecutor({
+          explorationRadius: config.explorationRadius
+        })
       })
       console.log(
         `🧠 Autonomous mode enabled with ${config.provider}/${config.model}`

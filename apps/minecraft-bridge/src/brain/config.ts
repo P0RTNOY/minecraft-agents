@@ -2,6 +2,7 @@ export interface BrainConfig {
   autonomous: boolean
   tickIntervalMs: number
   reflexIntervalMs: number
+  explorationRadius: number
   provider: string
   model: string
   ollamaBaseUrl: string
@@ -18,6 +19,9 @@ const MAX_TICK_INTERVAL_MS = 300_000
 const DEFAULT_REFLEX_INTERVAL_MS = 250
 const MIN_REFLEX_INTERVAL_MS = 100
 const MAX_REFLEX_INTERVAL_MS = 500
+const DEFAULT_EXPLORATION_RADIUS = 24
+const MIN_EXPLORATION_RADIUS = 8
+const MAX_EXPLORATION_RADIUS = 32
 
 export function loadBrainConfig(
   environment: Environment = process.env
@@ -41,6 +45,13 @@ export function loadBrainConfig(
     MIN_REFLEX_INTERVAL_MS,
     MAX_REFLEX_INTERVAL_MS
   )
+  const explorationRadius = parseInterval(
+    environment.AGENT_EXPLORATION_RADIUS,
+    'AGENT_EXPLORATION_RADIUS',
+    DEFAULT_EXPLORATION_RADIUS,
+    MIN_EXPLORATION_RADIUS,
+    MAX_EXPLORATION_RADIUS
+  )
   const debugTiming = parseBoolean(
     environment.LLM_DEBUG_TIMING,
     'LLM_DEBUG_TIMING',
@@ -62,6 +73,7 @@ export function loadBrainConfig(
     autonomous,
     tickIntervalMs,
     reflexIntervalMs,
+    explorationRadius,
     provider,
     model,
     ollamaBaseUrl: environment.OLLAMA_BASE_URL?.trim() ||

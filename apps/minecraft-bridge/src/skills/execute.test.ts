@@ -64,16 +64,26 @@ describe('decision executor', () => {
           dropDetected: true
         }
       },
+      exploreArea: async (_bot, _state, radius, source) => {
+        calls.push(`explore:${radius}:${source}`)
+        return {
+          success: true,
+          action: 'explore',
+          status: 'completed',
+          distanceTraveled: 9
+        }
+      },
       say: (_bot, message) => {
         calls.push(`say:${message}`)
         return { success: true, action: 'say', message }
       }
     }
-    const execute = createDecisionExecutor(skills)
+    const execute = createDecisionExecutor(skills, { explorationRadius: 16 })
     const state = createAgentState('Alice')
     const decisions: AgentDecision[] = [
       { action: 'idle', reason: 'Wait.' },
       { action: 'scan', reason: 'Observe.' },
+      { action: 'explore', reason: 'Search nearby.' },
       { action: 'follow_player', username: 'Steve', reason: 'Follow.' },
       { action: 'come_to_player', username: 'Alex', reason: 'Meet.' },
       { action: 'stop', reason: 'Stop.' },
@@ -89,6 +99,7 @@ describe('decision executor', () => {
     assert.deepEqual(results.map(result => result.action), [
       'idle',
       'scan',
+      'explore',
       'follow_player',
       'come_to_player',
       'stop',
@@ -96,6 +107,7 @@ describe('decision executor', () => {
       'say'
     ])
     assert.deepEqual(calls, [
+      'explore:16:autonomous',
       'follow:Steve:autonomous',
       'come:Alex:autonomous',
       'stop',
@@ -143,6 +155,9 @@ function createFailingSkillBindings(): DecisionSkillBindings {
       throw new Error('not used')
     },
     collectBlock: async () => {
+      throw new Error('not used')
+    },
+    exploreArea: async () => {
       throw new Error('not used')
     },
     say: () => {

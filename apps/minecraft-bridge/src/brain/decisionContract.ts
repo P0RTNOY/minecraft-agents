@@ -13,7 +13,7 @@ export const SYSTEM_INSTRUCTION = [
   'Prioritize useful survival progress and avoid pointless repetition.',
   'Do not greet without a contextual reason, and do not invent players or resources.',
   'Health and food use 0-20; low health is dangerous. Keep the reason very short.',
-  'Approved actions: idle, scan, follow_player(username), come_to_player(username), stop, collect_block(block), say(message).',
+  'Approved actions: idle, scan, explore, follow_player(username), come_to_player(username), stop, collect_block(block), say(message).',
   'Return only one JSON object matching the requested schema. Never propose code, shell commands, coordinates, or unlisted actions.'
 ].join(' ')
 
@@ -21,6 +21,7 @@ export const DECISION_JSON_SCHEMA = {
   anyOf: [
     simpleDecisionSchema('idle'),
     simpleDecisionSchema('scan'),
+    simpleDecisionSchema('explore'),
     simpleDecisionSchema('stop'),
     targetedDecisionSchema('follow_player', 'username', MAX_USERNAME_LENGTH),
     targetedDecisionSchema('come_to_player', 'username', MAX_USERNAME_LENGTH),
@@ -88,7 +89,7 @@ export function serializeBrainInput(input: BrainInput): unknown {
   }
 }
 
-function simpleDecisionSchema(action: 'idle' | 'scan' | 'stop') {
+function simpleDecisionSchema(action: 'idle' | 'scan' | 'explore' | 'stop') {
   return {
     type: 'object',
     properties: {

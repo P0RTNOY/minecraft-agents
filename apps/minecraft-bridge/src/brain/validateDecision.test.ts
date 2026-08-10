@@ -16,6 +16,9 @@ describe('validateDecision', () => {
       [{ action: 'scan', reason: 'Observe nearby terrain.' }, {
         action: 'scan', reason: 'Observe nearby terrain.'
       }],
+      [{ action: 'explore', reason: 'Search for useful terrain.' }, {
+        action: 'explore', reason: 'Search for useful terrain.'
+      }],
       [{ action: 'follow_player', username: 'Steve_1', reason: 'Stay nearby.' }, {
         action: 'follow_player', username: 'Steve_1', reason: 'Stay nearby.'
       }],
@@ -109,8 +112,8 @@ describe('validateDecision', () => {
       reason: 'Unsafe chat command.'
     })
     const extraField = validateDecision({
-      action: 'idle',
-      reason: 'Wait.',
+      action: 'explore',
+      reason: 'Search nearby.',
       coordinates: [0, 64, 0]
     })
 

@@ -50,6 +50,7 @@ export function validateDecision(
   switch (action) {
     case 'idle':
     case 'scan':
+    case 'explore':
     case 'stop': {
       rejectExtraFields(input, ['action', 'reason'], issues)
       if (!reason || issues.length > 0) return { success: false, issues }

@@ -9,6 +9,7 @@ describe('loadBrainConfig', () => {
       autonomous: false,
       tickIntervalMs: 5000,
       reflexIntervalMs: 250,
+      explorationRadius: 24,
       provider: 'ollama',
       model: '',
       ollamaBaseUrl: 'http://127.0.0.1:11434',
@@ -23,6 +24,7 @@ describe('loadBrainConfig', () => {
       AGENT_AUTONOMOUS: 'true',
       AGENT_TICK_INTERVAL_MS: '8000',
       AGENT_REFLEX_INTERVAL_MS: '400',
+      AGENT_EXPLORATION_RADIUS: '16',
       LLM_PROVIDER: 'ollama',
       LLM_MODEL: 'local-test-model',
       OLLAMA_BASE_URL: 'http://localhost:11434/',
@@ -33,6 +35,7 @@ describe('loadBrainConfig', () => {
       autonomous: true,
       tickIntervalMs: 8000,
       reflexIntervalMs: 400,
+      explorationRadius: 16,
       provider: 'ollama',
       model: 'local-test-model',
       ollamaBaseUrl: 'http://localhost:11434/',
@@ -54,6 +57,14 @@ describe('loadBrainConfig', () => {
     assert.throws(
       () => loadBrainConfig({ AGENT_REFLEX_INTERVAL_MS: '501' }),
       /AGENT_REFLEX_INTERVAL_MS must be at most 500/
+    )
+    assert.throws(
+      () => loadBrainConfig({ AGENT_EXPLORATION_RADIUS: '7' }),
+      /AGENT_EXPLORATION_RADIUS must be at least 8/
+    )
+    assert.throws(
+      () => loadBrainConfig({ AGENT_EXPLORATION_RADIUS: '33' }),
+      /AGENT_EXPLORATION_RADIUS must be at most 32/
     )
     assert.throws(
       () => loadBrainConfig({ AGENT_AUTONOMOUS: 'true' }),

@@ -12,6 +12,7 @@ interface DecisionBase {
 export type AgentDecision =
   | (DecisionBase & { action: 'idle' })
   | (DecisionBase & { action: 'scan' })
+  | (DecisionBase & { action: 'explore' })
   | (DecisionBase & { action: 'follow_player'; username: string })
   | (DecisionBase & { action: 'come_to_player'; username: string })
   | (DecisionBase & { action: 'stop' })

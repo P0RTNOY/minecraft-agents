@@ -3,6 +3,7 @@ export type AgentStatus =
   | 'moving'
   | 'following'
   | 'collecting'
+  | 'exploring'
   | 'fleeing'
   | 'eating'
 
@@ -11,6 +12,7 @@ export type AgentAction =
   | 'follow_player'
   | 'follow_nearest_player'
   | 'collect_block'
+  | 'explore'
   | 'flee_from_entity'
   | 'eat'
 

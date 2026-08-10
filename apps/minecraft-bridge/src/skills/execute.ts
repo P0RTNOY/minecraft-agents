@@ -7,12 +7,14 @@ import type {
 } from '../brain/types.js'
 import { perceive } from '../perception/perceive.js'
 import { collectBlock } from './collection.js'
+import { exploreArea } from './explore.js'
 import { comeToPlayer, followPlayer, stopMovement } from './movement.js'
 import { say } from './social.js'
 
 export interface DecisionSkillBindings {
   perceive: typeof perceive
   collectBlock: typeof collectBlock
+  exploreArea: typeof exploreArea
   comeToPlayer: typeof comeToPlayer
   followPlayer: typeof followPlayer
   stopMovement: typeof stopMovement
@@ -25,16 +27,27 @@ export type DecisionExecutor = (
   state: AgentState
 ) => Promise<DecisionExecutionResult>
 
+export interface DecisionExecutorOptions {
+  explorationRadius?: number
+}
+
 const defaultSkills: DecisionSkillBindings = {
   perceive,
   collectBlock,
+  exploreArea,
   comeToPlayer,
   followPlayer,
   stopMovement,
   say
 }
 
-const defaultExecutor = createDecisionExecutor(defaultSkills)
+const defaultExecutor = createDefaultDecisionExecutor()
+
+export function createDefaultDecisionExecutor(
+  options: DecisionExecutorOptions = {}
+): DecisionExecutor {
+  return createDecisionExecutor(defaultSkills, options)
+}
 
 export function executeDecision(
   bot: Bot,
@@ -45,8 +58,11 @@ export function executeDecision(
 }
 
 export function createDecisionExecutor(
-  skills: DecisionSkillBindings
+  skills: DecisionSkillBindings,
+  options: DecisionExecutorOptions = {}
 ): DecisionExecutor {
+  const explorationRadius = options.explorationRadius ?? 24
+
   return async (bot, decision, state) => {
     try {
       switch (decision.action) {
@@ -69,6 +85,28 @@ export function createDecisionExecutor(
               nearbyBlocks: snapshot.nearbyBlocks.length,
               nearbyEntities: snapshot.nearbyEntities.length,
               inventoryStacks: snapshot.inventory.length
+            }
+          }
+        }
+
+        case 'explore': {
+          const result = await skills.exploreArea(
+            bot,
+            state,
+            explorationRadius,
+            'autonomous'
+          )
+          return {
+            success: result.success,
+            action: 'explore',
+            status: result.status,
+            summary: result.success
+              ? `Explored ${result.distanceTraveled} blocks.`
+              : 'Could not find a safe exploration route.',
+            details: {
+              distanceTraveled: result.distanceTraveled,
+              ...(result.reason ? { reason: result.reason } : {}),
+              ...(result.error ? { error: result.error } : {})
             }
           }
         }
