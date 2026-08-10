@@ -194,3 +194,142 @@ The combined local evidence does not justify a planner or another architecture l
 No architecture fix was made. The only runtime addition is a provider-neutral OpenAI adapter behind the same `unknown -> structural validation -> contextual validation -> repetition -> arbitration -> executor` flow. A live Minecraft run was also skipped because no newly tested model produced deterministic benchmark progress.
 
 Recommended next step: provide a usable `OPENAI_API_KEY` in a future M3.2 continuation and run only the fixed eight-request `gpt-5-mini` benchmark. If it makes clear progress, analyze that trace before any escalation; if it does not, compare one stronger suitable OpenAI model. Do not add planning, memory, new skills, or decision types without that evidence.
+
+## M3.2 Remote strong-model evaluation
+
+Date: 2026-08-10
+
+This continuation uses the same eight-cycle bootstrap scenario, prompt, goal
+semantics, decision vocabulary, contextual validation, repetition policy, and
+simulated transitions as the local evaluations. These are project-specific
+engineering measurements, not general provider rankings. Credentials were read
+only from the ignored local `.env`; no credential value, authorization header,
+or raw provider error was logged or stored in the repository.
+
+### Provider compatibility fixes
+
+The first remote attempts exposed three provider transport defects before useful
+model evaluation was possible:
+
+- OpenAI strict Structured Outputs rejected every request because each action
+  discriminator used `const` without the explicit `type: "string"` required by
+  the provider's supported JSON Schema subset. Adding the redundant type leaves
+  the decision contract unchanged. A mocked regression now verifies every
+  branch.
+- Once schema validation passed, `gpt-5-mini` exhausted the OpenAI 128-token
+  output ceiling before returning JSON. A metadata-only diagnostic response
+  reported `max_output_tokens`, 876 input tokens, 128 output tokens, and 64
+  reasoning tokens. The OpenAI-specific ceiling is now 512 tokens; reasoning
+  effort remains `low`, and reasoning content is neither requested nor parsed.
+- Groq strict Structured Outputs rejected the shared top-level `anyOf`. Like the
+  OpenAI adapter, Groq now transports the exact decision union inside one
+  required `decision` property and unwraps it back to `unknown` before the
+  existing validator. A mocked regression covers the wrapper and missing-object
+  failure.
+
+No recipe hint, benchmark state, policy, skill, or action type changed. After
+these fixes, the providers were rerun from the beginning rather than continuing
+from partial state.
+
+### Remote benchmark results
+
+| Provider / model | Valid | Grounded | Accepted | Progress | No progress | Idle rate | Repeated no progress | Goal completion | Mean / median latency | Input / output tokens | Approx. cost | Notable failure |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| OpenAI / `gpt-5-mini` | 8/8 | 8/8 | 7/8 | 5/8 | 3/8 | 0% | 2/8 | 1/1 | 1,960 / 1,956 ms | 8,545 / 1,043 | $0.00422 | After completing the goal in cycle 5, it explored twice; the third unchanged-world exploration was rejected as `stagnant_action`. |
+| Groq / `openai/gpt-oss-20b` | 5/8 | 3/8 | 3/8 | 2/8 | 3/8 | 0% | 0/8 | 0/1 | 333 / 399 ms | 6,659 / 404 | $0.00062 | It crafted planks and sticks, then twice proposed an unavailable crafting-table recipe; cycles 6-8 were rejected by the service with HTTP 429. |
+
+The Groq latency summary includes three fast rate-limit rejections and therefore
+must not be read as pure inference latency. Its five generated responses averaged
+483 ms with a 520 ms median. Token totals include only responses whose usage was
+returned to the benchmark. Costs use the current listed standard rates:
+[`gpt-5-mini`](https://developers.openai.com/api/docs/models/gpt-5-mini) at
+$0.25/M input and $2.00/M output tokens, and
+[`openai/gpt-oss-20b`](https://console.groq.com/docs/model/openai/gpt-oss-20b)
+at $0.075/M input and $0.30/M output tokens. Actual billed cost may be lower
+when provider-side prompt caching or free allowance applies.
+
+`gpt-5-mini` selected this grounded completion sequence without a recipe
+walkthrough: craft 12 oak planks, craft one crafting table, place it, craft four
+sticks, and craft one wooden pickaxe. All five accepted transitions changed the
+application-owned goal progress, and the fifth completed
+`establish_basic_resources`. Because the first OpenAI candidate completed the
+goal, no stronger OpenAI model was tested.
+
+### Controlled live OpenAI result
+
+One bounded production-loop run used local Paper 1.21.11 and
+OpenAI/`gpt-5-mini`. Alice was the only player, with health and food at 20, an
+empty pre-test inventory, and a recorded pre-test position of
+`(3.699999988079071, 87, 5.42456556764243)`. The fixture placed Alice on the
+same temporary 33×33 high-altitude smooth-stone platform used for earlier safe
+bootstrap work, bounded it with barriers, set difficulty to Peaceful for the
+test only, and gave exactly three oak logs. No action sequence was added to the
+prompt.
+
+The live decisions and results were:
+
+1. `craft_item(oak_planks, 12)` — succeeded.
+2. `craft_item(crafting_table, 1)` — succeeded.
+3. `place_block(crafting_table)` — succeeded and provided crafting access.
+4. `craft_item(stick, 4)` — succeeded.
+5. `craft_item(wooden_pickaxe, 1)` — failed runtime crafting revalidation.
+6. `craft_item(wooden_pickaxe, 1)` — failed safely again.
+7. `craft_item(wooden_axe, 1)` — succeeded.
+8. The next cycle reported `establish_basic_resources` completed, then collected
+   the placed crafting table while beginning the next goal. The following cycle
+   was stopped before execution.
+
+The run lasted about 73 seconds. Crafting access and a basic tool were both
+achieved. Immediately before cleanup, the inventory changes were consistent with
+one wooden axe, three planks, two sticks, and the recovered crafting table (seven
+items total); cleanup then cleared all seven. The production loop currently does
+not aggregate provider timing/usage, so exact live request latency and tokens
+were not captured. Nine Brain cycles reached or began provider evaluation. Using
+the measured benchmark per-request averages gives a clearly labelled estimate of
+about 9,600 input tokens, 1,170 output tokens, and $0.0047 for the live slice;
+this is not billing telemetry.
+
+Cleanup filled the exact temporary volume (`x=-16..16`, `y=199..202`,
+`z=-16..16`) with air, removed all force-loaded chunks, restored difficulty to
+Easy, cleared Alice to an empty inventory, and teleported her to the recorded
+coordinates. A verification login showed survival mode, health/food 20, and an
+empty inventory; normal terrain physics settled her one block lower at Y=86.
+Paper was running before the test and was left running afterward with no players
+online.
+
+### Classification and provider strategy
+
+This is **Case A: the current architecture is capability-sufficient**. A strong
+remote model completed both the deterministic benchmark and a real bounded
+Minecraft bootstrap without planner state, memory, recipe scripting, new action
+types, or relaxed safety checks. The decisive limitation in the earlier M3.1 and
+specialized-model results was local model competence, not the one-step decision
+architecture.
+
+For this workload, use `gpt-5-mini` for deliberate goal decisions, retain
+deterministic reflexes for urgent survival behavior, and keep a small Ollama model
+only as a cheap/local fallback where lower task success is acceptable. Groq
+`openai/gpt-oss-20b` is much faster when admitted, but this run did not complete
+the goal and hit account rate limits after five generations. Do not add a planner
+or provider router on this evidence alone. The next milestone should investigate
+the reproducible wooden-pickaxe crafting failure as a focused skill/runtime issue,
+then evaluate reliability across repeated bounded bootstrap seeds before any M4
+architecture expansion.
+
+With credentials already exported in the shell, reproduce the benchmarks from
+`apps/minecraft-bridge` with:
+
+```sh
+LLM_PROVIDER=openai LLM_MODEL=gpt-5-mini npm run benchmark:brain
+LLM_PROVIDER=groq LLM_MODEL=openai/gpt-oss-20b npm run benchmark:brain
+```
+
+To load the ignored repository-root `.env` explicitly without printing it, run
+the equivalent entrypoint from `apps/minecraft-bridge`:
+
+```sh
+LLM_PROVIDER=openai LLM_MODEL=gpt-5-mini \
+  node --env-file=../../.env --import tsx src/brain/benchmark/cli.ts
+LLM_PROVIDER=groq LLM_MODEL=openai/gpt-oss-20b \
+  node --env-file=../../.env --import tsx src/brain/benchmark/cli.ts
+```
