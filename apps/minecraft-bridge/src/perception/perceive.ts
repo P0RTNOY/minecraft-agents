@@ -8,6 +8,7 @@ import { getEntityName } from '../survival/hostility.js'
 import { countSafeFoodItems } from '../skills/eat.js'
 import { inspectInventoryItems } from '../skills/inventory.js'
 import { inspectCraftingCapabilities } from '../skills/crafting.js'
+import { inspectPlaceableBlocks } from '../skills/placement.js'
 
 export function perceive(
   bot: Bot,
@@ -85,6 +86,7 @@ export function perceive(
     inventory,
     edibleItemCount: countSafeFoodItems(bot, inventory),
     ...crafting,
-    equippedItem: bot.heldItem?.name ?? null
+    equippedItem: bot.heldItem?.name ?? null,
+    placeableBlocks: inspectPlaceableBlocks(bot, inventoryItems)
   }
 }

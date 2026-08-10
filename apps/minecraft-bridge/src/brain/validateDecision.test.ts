@@ -34,6 +34,9 @@ describe('validateDecision', () => {
       [{ action: 'craft_item', item: 'oak_planks', amount: 4, reason: 'Make planks.' }, {
         action: 'craft_item', item: 'oak_planks', amount: 4, reason: 'Make planks.'
       }],
+      [{ action: 'place_block', block: 'crafting_table', reason: 'Place a table.' }, {
+        action: 'place_block', block: 'crafting_table', reason: 'Place a table.'
+      }],
       [{ action: 'say', message: 'Hello, Steve!', reason: 'Be friendly.' }, {
         action: 'say', message: 'Hello, Steve!', reason: 'Be friendly.'
       }]
@@ -271,5 +274,30 @@ describe('validateDecision', () => {
     ]) {
       assert.equal(validateDecision(decision).success, false)
     }
+  })
+
+  it('accepts only exact currently placeable inventory blocks', () => {
+    const context = {
+      selfUsername: 'Alice',
+      visibleExternalPlayers: [],
+      visibleNearbyBlocks: [],
+      placeableBlocks: [{ name: 'crafting_table', count: 1 }]
+    }
+
+    assert.equal(validateDecision({
+      action: 'place_block',
+      block: 'crafting_table',
+      reason: 'Use the table.'
+    }, context).success, true)
+    assert.equal(validateDecision({
+      action: 'place_block',
+      block: 'tnt',
+      reason: 'Place TNT.'
+    }, context).success, false)
+    assert.equal(validateDecision({
+      action: 'place_block',
+      block: 'Crafting_Table',
+      reason: 'Use the table.'
+    }, context).success, false)
   })
 })

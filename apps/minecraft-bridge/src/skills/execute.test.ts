@@ -27,7 +27,8 @@ describe('decision executor', () => {
         edibleItemCount: 0,
         craftableItems: [],
         nearbyCraftingTable: false,
-        equippedItem: null
+        equippedItem: null,
+        placeableBlocks: []
       }),
       followPlayer: (_bot, _state, username, source) => {
         calls.push(`follow:${username}:${source}`)
@@ -78,6 +79,16 @@ describe('decision executor', () => {
           status: 'completed'
         }
       },
+      placeInventoryBlock: async (_bot, _state, block, source) => {
+        calls.push(`place:${block}:${source}`)
+        return {
+          success: true,
+          action: 'place_block',
+          target: block,
+          placed: true,
+          status: 'completed'
+        }
+      },
       exploreArea: async (_bot, _state, radius, source) => {
         calls.push(`explore:${radius}:${source}`)
         return {
@@ -103,6 +114,7 @@ describe('decision executor', () => {
       { action: 'stop', reason: 'Stop.' },
       { action: 'collect_block', block: 'oak_log', reason: 'Collect.' },
       { action: 'craft_item', item: 'oak_planks', amount: 4, reason: 'Craft.' },
+      { action: 'place_block', block: 'crafting_table', reason: 'Place.' },
       { action: 'say', message: 'Hello!', reason: 'Greet.' }
     ]
 
@@ -120,6 +132,7 @@ describe('decision executor', () => {
       'stop',
       'collect_block',
       'craft_item',
+      'place_block',
       'say'
     ])
     assert.deepEqual(calls, [
@@ -129,6 +142,7 @@ describe('decision executor', () => {
       'stop',
       'collect:oak_log:autonomous',
       'craft:oak_planks:4:autonomous',
+      'place:crafting_table:autonomous',
       'say:Hello!'
     ])
   })
@@ -175,6 +189,9 @@ function createFailingSkillBindings(): DecisionSkillBindings {
       throw new Error('not used')
     },
     craftItem: async () => {
+      throw new Error('not used')
+    },
+    placeInventoryBlock: async () => {
       throw new Error('not used')
     },
     exploreArea: async () => {

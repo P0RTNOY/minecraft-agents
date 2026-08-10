@@ -164,6 +164,7 @@ function snapshot(
     craftableItems: [],
     nearbyCraftingTable: false,
     equippedItem: null,
+    placeableBlocks: [],
     ...overrides
   }
 }

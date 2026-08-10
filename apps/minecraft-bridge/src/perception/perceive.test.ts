@@ -39,7 +39,8 @@ describe('perceive', () => {
             { name: 'apple', count: 2, type: 10 } as Item,
             { name: 'rotten_flesh', count: 3, type: 11 } as Item,
             { name: 'cobblestone', count: 4, type: 12 } as Item,
-            { name: 'oak_log', count: 2, type: 19 } as Item
+            { name: 'oak_log', count: 2, type: 19 } as Item,
+            { name: 'crafting_table', count: 1, type: 21 } as Item
           ]
         }
       },
@@ -54,6 +55,13 @@ describe('perceive', () => {
         itemsByName: {
           oak_log: { id: 19, name: 'oak_log' },
           oak_planks: { id: 20, name: 'oak_planks' }
+        },
+        blocksByName: {
+          crafting_table: {
+            id: 21,
+            name: 'crafting_table',
+            boundingBox: 'block'
+          }
         }
       }
     } as unknown as Bot
@@ -69,6 +77,10 @@ describe('perceive', () => {
     }])
     assert.equal(result.nearbyCraftingTable, false)
     assert.equal(result.equippedItem, null)
+    assert.deepEqual(result.placeableBlocks, [{
+      name: 'crafting_table',
+      count: 1
+    }])
     assert.deepEqual(result.nearbyEntities, [{
       id: 7,
       name: 'creeper',

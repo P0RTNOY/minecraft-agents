@@ -22,7 +22,8 @@ const input: BrainInput = {
     edibleItemCount: 0,
     craftableItems: [],
     nearbyCraftingTable: false,
-    equippedItem: null
+    equippedItem: null,
+    placeableBlocks: []
   },
   state: {
     agentName: 'Alice',
@@ -104,5 +105,13 @@ describe('Brain decision contract', () => {
     assert.match(contract, /\"maximum\":64/)
     assert.match(contract, /\"type\":\"integer\"/)
     assert.match(SYSTEM_INSTRUCTION, /craft_item/)
+  })
+
+  it('allows inventory-grounded placement without model coordinates', () => {
+    const contract = JSON.stringify(DECISION_JSON_SCHEMA)
+
+    assert.match(contract, /\"place_block\"/)
+    assert.match(SYSTEM_INSTRUCTION, /place_block/)
+    assert.doesNotMatch(contract, /coordinates|destination|position/)
   })
 })

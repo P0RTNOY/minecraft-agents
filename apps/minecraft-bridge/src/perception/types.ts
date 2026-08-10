@@ -37,4 +37,5 @@ export interface PerceptionSnapshot {
   craftableItems: CraftableItemSnapshot[]
   nearbyCraftingTable: boolean
   equippedItem: string | null
+  placeableBlocks: InventoryItemSnapshot[]
 }

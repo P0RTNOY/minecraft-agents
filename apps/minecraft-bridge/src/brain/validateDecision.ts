@@ -1,5 +1,6 @@
 import type { AgentDecision } from './types.js'
 import type { CraftableItemSnapshot } from '../skills/crafting.js'
+import type { InventoryItemSnapshot } from '../skills/inventory.js'
 
 export const MAX_REASON_LENGTH = 160
 export const MAX_SAY_MESSAGE_LENGTH = 256
@@ -17,6 +18,7 @@ export interface DecisionValidationContext {
   visibleExternalPlayers: readonly string[]
   visibleNearbyBlocks: readonly string[]
   craftableItems?: readonly CraftableItemSnapshot[]
+  placeableBlocks?: readonly InventoryItemSnapshot[]
 }
 
 export type DecisionValidationResult =
@@ -186,6 +188,43 @@ export function validateDecision(
       }
 
       return { success: true, decision: { action, item, amount, reason } }
+    }
+
+    case 'place_block': {
+      const block = readBoundedString(
+        input,
+        'block',
+        MAX_BLOCK_NAME_LENGTH,
+        issues
+      )
+      rejectExtraFields(input, ['action', 'block', 'reason'], issues)
+
+      if (block && !BLOCK_NAME.test(block)) {
+        issues.push({
+          path: 'block',
+          message: 'Block must be a lowercase Minecraft registry name.'
+        })
+      }
+
+      if (
+        block &&
+        context &&
+        BLOCK_NAME.test(block) &&
+        !context.placeableBlocks?.some(candidate => (
+          candidate.name === block && candidate.count > 0
+        ))
+      ) {
+        issues.push({
+          path: 'block',
+          message: 'Block target must be currently placeable from inventory.'
+        })
+      }
+
+      if (!reason || !block || issues.length > 0) {
+        return { success: false, issues }
+      }
+
+      return { success: true, decision: { action, block, reason } }
     }
 
     case 'say': {

@@ -71,7 +71,8 @@ const input: BrainInput = {
       requiresTable: false
     }],
     nearbyCraftingTable: false,
-    equippedItem: null
+    equippedItem: null,
+    placeableBlocks: [{ name: 'crafting_table', count: 1 }]
   },
   state: {
     agentName: 'Alice',
@@ -104,7 +105,8 @@ describe('buildBrainSemantics', () => {
           requiresTable: false
         }],
         nearbyCraftingTable: false,
-        equippedItem: null
+        equippedItem: null,
+        placeableBlocks: [{ name: 'crafting_table', count: 1 }]
       },
       externalVisiblePlayers: [{ username: 'Steve', distance: 4.2 }],
       nearbyEntities: [{ name: 'zombie', type: 'mob', distance: 6.3 }]
@@ -157,7 +159,8 @@ describe('buildBrainSemantics', () => {
         requiresTable: false
       }],
       nearbyCraftingTable: false,
-      equippedItem: null
+      equippedItem: null,
+      placeableBlocks: [{ name: 'crafting_table', count: 1 }]
     })
     assert.deepEqual(serialized.perception.self, { username: 'Alice' })
   })
@@ -173,7 +176,8 @@ describe('buildDecisionContext', () => {
         item: 'oak_planks',
         maxCraftable: 8,
         requiresTable: false
-      }]
+      }],
+      placeableBlocks: [{ name: 'crafting_table', count: 1 }]
     })
   })
 })

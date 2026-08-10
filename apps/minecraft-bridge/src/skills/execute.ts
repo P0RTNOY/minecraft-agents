@@ -10,12 +10,14 @@ import { collectBlock } from './collection.js'
 import { craftItem } from './crafting.js'
 import { exploreArea } from './explore.js'
 import { comeToPlayer, followPlayer, stopMovement } from './movement.js'
+import { placeInventoryBlock } from './placement.js'
 import { say } from './social.js'
 
 export interface DecisionSkillBindings {
   perceive: typeof perceive
   collectBlock: typeof collectBlock
   craftItem: typeof craftItem
+  placeInventoryBlock: typeof placeInventoryBlock
   exploreArea: typeof exploreArea
   comeToPlayer: typeof comeToPlayer
   followPlayer: typeof followPlayer
@@ -37,6 +39,7 @@ const defaultSkills: DecisionSkillBindings = {
   perceive,
   collectBlock,
   craftItem,
+  placeInventoryBlock,
   exploreArea,
   comeToPlayer,
   followPlayer,
@@ -193,6 +196,28 @@ export function createDecisionExecutor(
             details: {
               requested: result.requested,
               crafted: result.crafted,
+              ...(result.reason ? { reason: result.reason } : {}),
+              ...(result.error ? { error: result.error } : {})
+            }
+          }
+        }
+
+        case 'place_block': {
+          const result = await skills.placeInventoryBlock(
+            bot,
+            state,
+            decision.block,
+            'autonomous'
+          )
+          return {
+            success: result.success,
+            action: 'place_block',
+            status: result.status,
+            summary: result.success
+              ? `Placed ${decision.block}.`
+              : `Could not place ${decision.block}.`,
+            details: {
+              placed: result.placed,
               ...(result.reason ? { reason: result.reason } : {}),
               ...(result.error ? { error: result.error } : {})
             }

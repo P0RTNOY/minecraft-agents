@@ -14,7 +14,7 @@ export const SYSTEM_INSTRUCTION = [
   'Prioritize useful survival progress and avoid pointless repetition.',
   'Do not greet without a contextual reason, and do not invent players or resources.',
   'Health and food use 0-20; low health is dangerous. Keep the reason very short.',
-  'Approved actions: idle, scan, explore, follow_player(username), come_to_player(username), stop, collect_block(block), craft_item(item, amount), say(message).',
+  'Approved actions: idle, scan, explore, follow_player(username), come_to_player(username), stop, collect_block(block), craft_item(item, amount), place_block(block), say(message).',
   'Return only one JSON object matching the requested schema. Never propose code, shell commands, coordinates, or unlisted actions.'
 ].join(' ')
 
@@ -28,6 +28,7 @@ export const DECISION_JSON_SCHEMA = {
     targetedDecisionSchema('come_to_player', 'username', MAX_USERNAME_LENGTH),
     targetedDecisionSchema('collect_block', 'block', MAX_BLOCK_NAME_LENGTH),
     craftingDecisionSchema(),
+    targetedDecisionSchema('place_block', 'block', MAX_BLOCK_NAME_LENGTH),
     targetedDecisionSchema('say', 'message', MAX_SAY_MESSAGE_LENGTH)
   ]
 } as const
@@ -122,7 +123,7 @@ function simpleDecisionSchema(action: 'idle' | 'scan' | 'explore' | 'stop') {
 }
 
 function targetedDecisionSchema(
-  action: 'follow_player' | 'come_to_player' | 'collect_block' | 'say',
+  action: 'follow_player' | 'come_to_player' | 'collect_block' | 'place_block' | 'say',
   targetField: 'username' | 'block' | 'message',
   maxLength: number
 ) {

@@ -20,7 +20,8 @@ const brainInput: BrainInput = {
     edibleItemCount: 0,
     craftableItems: [],
     nearbyCraftingTable: false,
-    equippedItem: null
+    equippedItem: null,
+    placeableBlocks: []
   },
   state: {
     agentName: 'Alice',

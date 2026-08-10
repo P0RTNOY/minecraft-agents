@@ -24,6 +24,7 @@ export interface BrainSemantics {
     craftableItems: BrainInput['perception']['craftableItems']
     nearbyCraftingTable: boolean
     equippedItem: string | null
+    placeableBlocks: BrainInput['perception']['placeableBlocks']
   }
   externalVisiblePlayers: Array<{ username: string; distance: number }>
   nearbyEntities: Array<{ name: string; type: string; distance: number }>
@@ -58,7 +59,8 @@ export function buildBrainSemantics(input: BrainInput): BrainSemantics {
       hasFood: input.perception.edibleItemCount > 0,
       craftableItems: input.perception.craftableItems,
       nearbyCraftingTable: input.perception.nearbyCraftingTable,
-      equippedItem: input.perception.equippedItem
+      equippedItem: input.perception.equippedItem,
+      placeableBlocks: input.perception.placeableBlocks
     },
     externalVisiblePlayers: input.perception.nearbyEntities
       .filter(entity => (
@@ -102,7 +104,8 @@ export function buildDecisionContext(
     visibleNearbyBlocks: [...new Set(
       input.perception.nearbyBlocks.map(block => block.name)
     )],
-    craftableItems: input.perception.craftableItems
+    craftableItems: input.perception.craftableItems,
+    placeableBlocks: input.perception.placeableBlocks
   }
 }
 

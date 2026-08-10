@@ -5,6 +5,7 @@ export type AgentStatus =
   | 'collecting'
   | 'exploring'
   | 'crafting'
+  | 'placing'
   | 'fleeing'
   | 'eating'
 
@@ -15,6 +16,7 @@ export type AgentAction =
   | 'collect_block'
   | 'explore'
   | 'craft_item'
+  | 'place_block'
   | 'flee_from_entity'
   | 'eat'
 
