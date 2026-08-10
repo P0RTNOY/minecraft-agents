@@ -93,4 +93,4 @@
 - [x] Perform crafting correctness, quantity contract, retry/idempotency, telemetry, arbitration, and secret-pattern reviews.
 - [x] Inspect `git status` and the complete diff; do not stage unrelated files or `.env`.
 - [x] Create focused conventional commits for confirmed improvements and evidence.
-- [ ] Push only to `origin/feature/autonomous-brain-iteration`, verify local/remote parity, and stop before M4.
+- [x] Push only to `origin/feature/autonomous-brain-iteration`, verify local/remote parity, and stop before M4.
