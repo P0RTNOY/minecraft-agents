@@ -17,7 +17,8 @@ import {
   BOOTSTRAP_TEST_AREA,
   bootstrapPlatformCommands,
   bootstrapRunResetCommands,
-  bootstrapWorldCleanupCommands
+  bootstrapWorldCleanupCommands,
+  isBootstrapStartState
 } from './environment.js'
 import { PaperController } from './paper.js'
 import { runBootstrapTrials } from './runner.js'
@@ -79,12 +80,10 @@ async function main(): Promise<void> {
       paper.send(`tellraw Alice {"text":"${marker}"}`)
       await ready
       const snapshot = perceive(bot)
-      if (
-        snapshot.health !== 20 || snapshot.food !== 20 ||
-        snapshot.inventory.length !== 1 ||
-        snapshot.inventory[0]?.name !== 'oak_log' ||
-        snapshot.inventory[0].count !== 3
-      ) {
+      const supportBlock = bot.blockAt(
+        bot.entity.position.offset(0, -1, 0).floored()
+      )?.name ?? null
+      if (!isBootstrapStartState(snapshot, supportBlock)) {
         throw new Error('Bootstrap start state verification failed.')
       }
     },

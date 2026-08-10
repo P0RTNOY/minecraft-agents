@@ -5,6 +5,29 @@ export const BOOTSTRAP_TEST_AREA = {
   playerY: 200
 } as const
 
+interface BootstrapStartSnapshot {
+  health: number
+  food: number
+  position: { x: number, y: number, z: number }
+  inventory: ReadonlyArray<{ name: string, count: number }>
+}
+
+export function isBootstrapStartState(
+  snapshot: BootstrapStartSnapshot,
+  supportBlock: string | null
+): boolean {
+  const { playerY } = BOOTSTRAP_TEST_AREA
+  return snapshot.health === 20 &&
+    snapshot.food === 20 &&
+    Math.abs(snapshot.position.x - 0.5) <= 0.01 &&
+    Math.abs(snapshot.position.y - playerY) <= 0.01 &&
+    Math.abs(snapshot.position.z - 0.5) <= 0.01 &&
+    snapshot.inventory.length === 1 &&
+    snapshot.inventory[0]?.name === 'oak_log' &&
+    snapshot.inventory[0].count === 3 &&
+    supportBlock === 'stone'
+}
+
 export function bootstrapPlatformCommands(): string[] {
   const { minimum, maximum, floorY, playerY } = BOOTSTRAP_TEST_AREA
   return [
@@ -31,7 +54,7 @@ export function bootstrapWorldCleanupCommands(): string[] {
   const { minimum, maximum, floorY, playerY } = BOOTSTRAP_TEST_AREA
   return [
     `fill ${minimum} ${floorY} ${minimum} ${maximum} ${playerY + 2} ${maximum} air`,
-    'forceload remove all',
+    `forceload remove ${minimum} ${minimum} ${maximum} ${maximum}`,
     'difficulty easy'
   ]
 }
