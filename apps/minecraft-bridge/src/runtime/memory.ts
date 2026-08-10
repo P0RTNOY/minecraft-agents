@@ -8,7 +8,7 @@ import {
 import { MemoryEventRecorder } from '../memory/recorder.js'
 import type { MemoryReflector } from '../memory/reflection.js'
 import { AtomicJsonMemoryStore } from '../memory/store.js'
-import type { MemoryIdentity } from '../memory/types.js'
+import type { MemoryIdentity, MemoryStore } from '../memory/types.js'
 
 const AGENT_ID = /^[a-z][a-z0-9_-]{0,31}$/
 const WORLD_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/
@@ -21,6 +21,9 @@ export interface CreateAgentMemoryOptions {
   debug: boolean
   logger?: MemoryCoordinatorLogger
   reflector?: Pick<MemoryReflector, 'consider'>
+  createReflector?: (
+    store: MemoryStore
+  ) => Pick<MemoryReflector, 'consider'>
 }
 
 export function memoryFilePath(
@@ -45,6 +48,7 @@ export async function createAgentMemory(
     identity
   })
   await store.open()
+  const reflector = options.reflector ?? options.createReflector?.(store)
   return new AgentMemoryCoordinator({
     store,
     recorder: new MemoryEventRecorder({ identity }),
@@ -53,6 +57,6 @@ export async function createAgentMemory(
     factLimit: options.factLimit,
     debug: options.debug,
     ...(options.logger ? { logger: options.logger } : {}),
-    ...(options.reflector ? { reflector: options.reflector } : {})
+    ...(reflector ? { reflector } : {})
   })
 }

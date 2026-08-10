@@ -32,6 +32,15 @@ export interface AggregateAgentTelemetry {
   meanProviderQueueWaitMs: number | null
 }
 
+export interface AgentProviderTelemetry {
+  recordProviderCall(event: {
+    succeeded: boolean
+    providerLatencyMs: number
+    queueWaitMs: number
+    timing: LLMRequestTiming | null
+  }): void
+}
+
 export class AgentRuntimeTelemetry {
   private providerCalls = 0
   private providerFailures = 0
@@ -104,7 +113,7 @@ export class AgentRuntimeTelemetry {
 export function instrumentAgentProvider(
   provider: LLMProvider,
   limiter: ProviderConcurrencyLimiter,
-  telemetry: AgentRuntimeTelemetry,
+  telemetry: AgentProviderTelemetry,
   signal: AbortSignal,
   now: () => number = Date.now
 ): LLMProvider {

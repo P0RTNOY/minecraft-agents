@@ -77,7 +77,7 @@ export function createDecisionExecutor(
             success: true,
             action: 'idle',
             status: 'completed',
-            summary: 'Alice remained idle.'
+            summary: `${state.agentName} remained idle.`
           }
 
         case 'scan': {

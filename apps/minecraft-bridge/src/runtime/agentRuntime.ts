@@ -128,7 +128,8 @@ export class AgentRuntime {
       const context = {
         identity: this.identity,
         definition: this.definition,
-        config: this.config
+        config: this.config,
+        logger: this.logger
       }
       const autonomous = this.definition.autonomous ?? this.config.autonomous
       const memoryEnabled = this.definition.memoryEnabled ?? this.config.memoryEnabled

@@ -15,6 +15,7 @@ export interface AgentConfigDocument {
 
 export interface AgentConfiguration {
   agents: readonly AgentDefinition[]
+  configuredAgentUsernames: readonly string[]
   maxProviderConcurrency: number
   brainStaggerMs: number
   operatorUsernames: readonly string[]
@@ -59,6 +60,7 @@ export async function loadAgentConfiguration(
 
   return {
     agents: selectAgents(document.agents, environment.AGENTS),
+    configuredAgentUsernames: document.agents.map(agent => agent.username),
     maxProviderConcurrency: parseInteger(
       environment.AGENT_LLM_MAX_CONCURRENCY,
       'AGENT_LLM_MAX_CONCURRENCY',

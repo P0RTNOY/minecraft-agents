@@ -26,6 +26,28 @@ describe('AgentRuntime', () => {
     assert.equal(bob.state.agentName, 'Bob')
   })
 
+  it('isolates arbitration generations and active execution locks', async () => {
+    const alice = harness({ id: 'alice', username: 'Alice' }).runtime
+    const bob = harness({ id: 'bob', username: 'Bob' }).runtime
+    const aliceAction = deferred<void>()
+    const aliceRun = alice.arbiter.run({
+      source: 'autonomous',
+      cancel() {},
+      execute: () => aliceAction.promise
+    })
+
+    alice.arbiter.interrupt('manual')
+    assert.equal(bob.arbiter.captureGeneration(), 0)
+    assert.deepEqual(await bob.arbiter.run({
+      source: 'autonomous',
+      cancel() {},
+      execute: async () => 'bob-executed'
+    }), { status: 'executed', value: 'bob-executed' })
+
+    aliceAction.resolve()
+    await aliceRun
+  })
+
   it('starts in dependency order and staggers only the Brain loop', async () => {
     const setup = harness({ id: 'bob', username: 'Bob' }, 2_000)
 

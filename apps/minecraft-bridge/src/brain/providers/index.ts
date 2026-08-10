@@ -4,13 +4,21 @@ import { GroqProvider } from './groq.js'
 import { OllamaProvider } from './ollama.js'
 import { OpenAIProvider } from './openai.js'
 
-export function createLLMProvider(config: BrainConfig): LLMProvider {
+export interface LLMProviderFactoryOptions {
+  logger?: { log(message: string): void }
+}
+
+export function createLLMProvider(
+  config: BrainConfig,
+  options: LLMProviderFactoryOptions = {}
+): LLMProvider {
   switch (config.provider) {
     case 'ollama':
       return new OllamaProvider({
         baseUrl: config.ollamaBaseUrl,
         model: config.model,
-        debugTiming: config.debugTiming
+        debugTiming: config.debugTiming,
+        ...(options.logger ? { logger: options.logger } : {})
       })
     case 'groq':
       return new GroqProvider({

@@ -66,6 +66,11 @@ describe('loadAgentConfiguration', () => {
     const selected = await load({ AGENTS: 'charlie,alice' }, document)
 
     assert.deepEqual(defaults.agents.map(agent => agent.id), ['alice'])
+    assert.deepEqual(defaults.configuredAgentUsernames, [
+      'Alice',
+      'Bob',
+      'Charlie'
+    ])
     assert.deepEqual(selected.agents.map(agent => agent.id), ['charlie', 'alice'])
   })
 

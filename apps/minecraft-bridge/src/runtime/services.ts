@@ -46,6 +46,7 @@ export interface AgentResourceContext {
   identity: RuntimeAgentIdentity
   definition: AgentDefinition
   config: BrainConfig
+  logger: RuntimeLogger
 }
 
 export interface ProviderResourceContext extends AgentResourceContext {
@@ -61,7 +62,6 @@ export interface RuntimeLoopContext extends AgentResourceContext {
   bot: Bot
   state: AgentState
   arbiter: ActionArbiter
-  logger: RuntimeLogger
 }
 
 export interface BrainLoopContext extends RuntimeLoopContext {
