@@ -65,6 +65,7 @@ describe('AgentRuntimeTelemetry', () => {
       budgetExhaustions: 0,
       loopRejections: 0,
       staleResponses: 0,
+      terminalConversationTurns: [1],
       relationshipUpdates: {
         agentSeen: 0,
         conversationCompleted: 1

@@ -8,6 +8,7 @@
     "benchmark:memory-ab": "tsx src/brain/reliability/compareCli.ts",
     "benchmark:bootstrap": "tsx src/brain/reliability/cli.ts",
     "validate:multi-agent": "tsx src/runtime/validationCli.ts",
+    "validate:social": "tsx src/social/validationCli.ts",
     "test": "node --import tsx --test \"src/**/*.test.ts\"",
     "dev": "tsx src/bot.ts",
     "build": "tsc",

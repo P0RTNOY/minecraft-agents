@@ -41,6 +41,7 @@ export interface SocialTelemetrySnapshot {
   budgetExhaustions: number
   loopRejections: number
   staleResponses: number
+  terminalConversationTurns: number[]
   relationshipUpdates: {
     agentSeen: number
     conversationCompleted: number
@@ -140,6 +141,7 @@ export class AgentRuntimeTelemetry {
         this.social.budgetExhaustions += 1
         return
       case 'terminal':
+        this.social.terminalConversationTurns.push(event.turns)
         if (event.outcome === 'completed') {
           this.social.conversationsCompleted += 1
         } else if (event.outcome === 'timeout') {
@@ -350,6 +352,7 @@ export function createEmptySocialTelemetry(): SocialTelemetrySnapshot {
     budgetExhaustions: 0,
     loopRejections: 0,
     staleResponses: 0,
+    terminalConversationTurns: [],
     relationshipUpdates: { agentSeen: 0, conversationCompleted: 0 },
     episodesCreated: 0
   }
@@ -360,6 +363,7 @@ function cloneSocialTelemetry(value: SocialTelemetrySnapshot): SocialTelemetrySn
     ...value,
     providerLatenciesMs: [...value.providerLatenciesMs],
     providerQueueWaitMs: [...value.providerQueueWaitMs],
+    terminalConversationTurns: [...value.terminalConversationTurns],
     relationshipUpdates: { ...value.relationshipUpdates }
   }
 }
