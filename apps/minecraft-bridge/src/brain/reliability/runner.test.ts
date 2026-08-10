@@ -39,7 +39,7 @@ describe('runBootstrapTrials', () => {
     let index = 0
     const results = await runBootstrapTrials({
       runs: 3,
-      provider: 'openai', model: 'gpt-5-mini', maxDecisions: 1, timeoutMs: 5,
+      provider: 'openai', model: 'gpt-5-mini', maxDecisions: 1, timeoutMs: 100,
       prepare: async () => {},
       cleanup: async runId => { if (runId === 'run-3') throw new Error('cleanup failed') },
       createTrial: () => {

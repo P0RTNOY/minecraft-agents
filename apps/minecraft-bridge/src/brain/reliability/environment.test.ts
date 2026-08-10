@@ -5,7 +5,8 @@ import {
   bootstrapPlatformCommands,
   bootstrapRunResetCommands,
   bootstrapWorldCleanupCommands,
-  isBootstrapStartState
+  isBootstrapStartState,
+  waitForBootstrapStartState
 } from './environment.js'
 
 describe('bootstrap environment commands', () => {
@@ -46,5 +47,34 @@ describe('bootstrap environment commands', () => {
       ...snapshot,
       inventory: [{ name: 'oak_log', count: 2 }]
     }, 'stone'), false)
+  })
+
+  it('waits for the authoritative client start state instead of trusting the marker order', async () => {
+    const healthy = {
+      health: 20,
+      food: 20,
+      position: { x: 0.5, y: 200, z: 0.5 },
+      inventory: [{ name: 'oak_log', count: 3 }]
+    }
+    let reads = 0
+    let waits = 0
+
+    assert.equal(await waitForBootstrapStartState(
+      () => {
+        reads += 1
+        return reads >= 3
+          ? { snapshot: healthy, supportBlock: 'stone' }
+          : { snapshot: { ...healthy, inventory: [] }, supportBlock: 'stone' }
+      },
+      async () => { waits += 1 },
+      5
+    ), true)
+    assert.equal(waits, 2)
+
+    assert.equal(await waitForBootstrapStartState(
+      () => ({ snapshot: { ...healthy, inventory: [] }, supportBlock: 'stone' }),
+      async () => {},
+      2
+    ), false)
   })
 })

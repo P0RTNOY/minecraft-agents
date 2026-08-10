@@ -18,7 +18,7 @@ import {
   bootstrapPlatformCommands,
   bootstrapRunResetCommands,
   bootstrapWorldCleanupCommands,
-  isBootstrapStartState
+  waitForBootstrapStartState
 } from './environment.js'
 import { PaperController } from './paper.js'
 import { runBootstrapTrials } from './runner.js'
@@ -79,11 +79,16 @@ async function main(): Promise<void> {
       paper.send('effect give Alice saturation 1 10 true')
       paper.send(`tellraw Alice {"text":"${marker}"}`)
       await ready
-      const snapshot = perceive(bot)
-      const supportBlock = bot.blockAt(
-        bot.entity.position.offset(0, -1, 0).floored()
-      )?.name ?? null
-      if (!isBootstrapStartState(snapshot, supportBlock)) {
+      const startStateReady = await waitForBootstrapStartState(
+        () => ({
+          snapshot: perceive(bot),
+          supportBlock: bot.blockAt(
+            bot.entity.position.offset(0, -1, 0).floored()
+          )?.name ?? null
+        }),
+        () => bot.waitForTicks(1)
+      )
+      if (!startStateReady) {
         throw new Error('Bootstrap start state verification failed.')
       }
     },

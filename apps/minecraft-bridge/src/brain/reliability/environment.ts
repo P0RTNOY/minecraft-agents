@@ -12,6 +12,11 @@ interface BootstrapStartSnapshot {
   inventory: ReadonlyArray<{ name: string, count: number }>
 }
 
+interface BootstrapStartObservation {
+  snapshot: BootstrapStartSnapshot
+  supportBlock: string | null
+}
+
 export function isBootstrapStartState(
   snapshot: BootstrapStartSnapshot,
   supportBlock: string | null
@@ -26,6 +31,27 @@ export function isBootstrapStartState(
     snapshot.inventory[0]?.name === 'oak_log' &&
     snapshot.inventory[0].count === 3 &&
     supportBlock === 'stone'
+}
+
+export async function waitForBootstrapStartState(
+  observe: () => BootstrapStartObservation,
+  waitForTick: () => Promise<void>,
+  maxChecks = 20
+): Promise<boolean> {
+  if (!Number.isInteger(maxChecks) || maxChecks < 1) {
+    throw new Error('Bootstrap start-state checks must be a positive integer.')
+  }
+
+  for (let check = 0; check < maxChecks; check += 1) {
+    const observation = observe()
+    if (isBootstrapStartState(
+      observation.snapshot,
+      observation.supportBlock
+    )) return true
+    if (check + 1 < maxChecks) await waitForTick()
+  }
+
+  return false
 }
 
 export function bootstrapPlatformCommands(): string[] {
