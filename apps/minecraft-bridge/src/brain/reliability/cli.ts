@@ -33,7 +33,8 @@ import {
 import {
   bootstrapCohort,
   memoryLayoutForRun,
-  readBootstrapMemoryMode
+  readBootstrapMemoryMode,
+  readPaperStartupTimeout
 } from './experiment.js'
 import { PaperController } from './paper.js'
 import { runBootstrapTrials } from './runner.js'
@@ -51,6 +52,9 @@ const maxDecisions = readPositiveInteger(process.env.BOOTSTRAP_MAX_DECISIONS, 12
 const timeoutMs = readPositiveInteger(process.env.BOOTSTRAP_TIMEOUT_MS, 150_000, 'BOOTSTRAP_TIMEOUT_MS')
 const outputPath = process.env.BOOTSTRAP_OUTPUT?.trim()
 const memoryMode = readBootstrapMemoryMode(process.env.BOOTSTRAP_MEMORY_MODE)
+const paperStartupTimeoutMs = readPaperStartupTimeout(
+  process.env.BOOTSTRAP_PAPER_START_TIMEOUT_MS
+)
 const serverDirectory = resolve(process.env.MINECRAFT_SERVER_DIR?.trim() || '../../minecraft/server')
 const config = loadBrainConfig({
   ...process.env,
@@ -58,7 +62,7 @@ const config = loadBrainConfig({
   LLM_PROVIDER: 'openai',
   LLM_MODEL: 'gpt-5-mini'
 })
-const paper = new PaperController(serverDirectory)
+const paper = new PaperController(serverDirectory, paperStartupTimeoutMs)
 const contexts = new Map<string, LiveContext>()
 let originalPosition: { x: number, y: number, z: number } | null = null
 
@@ -173,6 +177,12 @@ async function main(): Promise<void> {
   })
 
     const result = {
+      experiment: {
+        runs,
+        maxDecisions,
+        trialTimeoutMs: timeoutMs,
+        paperStartupTimeoutMs
+      },
       cohort: bootstrapCohort(
         config.memoryEnabled,
         memoryMode,

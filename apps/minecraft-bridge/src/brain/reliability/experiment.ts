@@ -82,6 +82,16 @@ export function readBootstrapMemoryMode(
   return normalized
 }
 
+export function readPaperStartupTimeout(value: string | undefined): number {
+  const parsed = value?.trim() ? Number(value) : 60_000
+  if (!Number.isInteger(parsed) || parsed < 60_000 || parsed > 300_000) {
+    throw new Error(
+      'BOOTSTRAP_PAPER_START_TIMEOUT_MS must be an integer from 60000 to 300000.'
+    )
+  }
+  return parsed
+}
+
 export function memoryLayoutForRun(
   mode: BootstrapMemoryMode,
   runId: string

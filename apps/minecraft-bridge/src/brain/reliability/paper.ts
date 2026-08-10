@@ -6,7 +6,10 @@ export class PaperController {
   private readonly lines: string[] = []
   private watchdogEvents = 0
 
-  constructor(private readonly serverDirectory: string) {}
+  constructor(
+    private readonly serverDirectory: string,
+    private readonly startupTimeoutMs = 60_000
+  ) {}
 
   get watchdogCount(): number {
     return this.watchdogEvents
@@ -21,7 +24,7 @@ export class PaperController {
     this.process = child
     this.capture(child.stdout)
     this.capture(child.stderr)
-    await this.waitFor(line => line.includes('Done ('), 60_000)
+    await this.waitFor(line => line.includes('Done ('), this.startupTimeoutMs)
   }
 
   async runCommands(commands: readonly string[], marker: string): Promise<void> {

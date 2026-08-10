@@ -10,7 +10,8 @@ import {
   bootstrapCohort,
   compareBootstrapCohorts,
   memoryLayoutForRun,
-  readBootstrapMemoryMode
+  readBootstrapMemoryMode,
+  readPaperStartupTimeout
 } from './experiment.js'
 import type { BootstrapReliabilitySummary } from './telemetry.js'
 
@@ -22,6 +23,19 @@ describe('memory reliability experiment controls', () => {
     assert.throws(
       () => readBootstrapMemoryMode('shared'),
       /BOOTSTRAP_MEMORY_MODE must be isolated or accumulating/
+    )
+  })
+
+  it('allows one bounded Paper startup override for every cohort', () => {
+    assert.equal(readPaperStartupTimeout(undefined), 60_000)
+    assert.equal(readPaperStartupTimeout('120000'), 120_000)
+    assert.throws(
+      () => readPaperStartupTimeout('59999'),
+      /BOOTSTRAP_PAPER_START_TIMEOUT_MS must be an integer from 60000 to 300000/
+    )
+    assert.throws(
+      () => readPaperStartupTimeout('300001'),
+      /BOOTSTRAP_PAPER_START_TIMEOUT_MS must be an integer from 60000 to 300000/
     )
   })
 
