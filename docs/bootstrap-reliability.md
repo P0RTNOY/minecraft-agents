@@ -114,6 +114,7 @@ npm run benchmark:bootstrap
 Deterministic provider benchmark, using its unchanged scenario set:
 
 ```sh
+LLM_PROVIDER=openai LLM_MODEL=gpt-5-mini \
 node --env-file=../../.env --import tsx src/brain/benchmark/cli.ts
 ```
 
