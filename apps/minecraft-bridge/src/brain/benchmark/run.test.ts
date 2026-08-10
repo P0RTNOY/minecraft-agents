@@ -102,7 +102,7 @@ describe('runBrainBenchmark', () => {
     assert.equal(observedInputs[1]?.recentDecisions[0]?.decision.action, 'say')
   })
 
-  it('distinguishes schema failures and unsafe player targets', async () => {
+  it('distinguishes schema failures and unsafe grounded targets', async () => {
     const playerInput: BrainInput = {
       ...baseInput,
       perception: {
@@ -121,13 +121,17 @@ describe('runBrainBenchmark', () => {
       scenario('invalid', baseInput),
       scenario('self_target', baseInput),
       scenario('hallucinated_target', playerInput),
-      scenario('visible_target', playerInput)
+      scenario('visible_target', playerInput),
+      scenario('uncraftable_item', baseInput),
+      scenario('unavailable_block', baseInput)
     ]
     const provider = scriptedProvider([
       { action: 'teleport', reason: 'Move quickly.' },
       { action: 'come_to_player', username: 'Alice', reason: 'Meet Alice.' },
       { action: 'follow_player', username: 'Alex', reason: 'Follow Alex.' },
-      { action: 'follow_player', username: 'Steve', reason: 'Follow Steve.' }
+      { action: 'follow_player', username: 'Steve', reason: 'Follow Steve.' },
+      { action: 'craft_item', item: 'diamond_pickaxe', amount: 1, reason: 'Upgrade.' },
+      { action: 'place_block', block: 'tnt', reason: 'Place it.' }
     ])
 
     const results = await runBrainBenchmark({
@@ -147,7 +151,9 @@ describe('runBrainBenchmark', () => {
       { scenario: 'invalid', valid: false, schemaFailure: true, unsafeTarget: false },
       { scenario: 'self_target', valid: false, schemaFailure: false, unsafeTarget: true },
       { scenario: 'hallucinated_target', valid: false, schemaFailure: false, unsafeTarget: true },
-      { scenario: 'visible_target', valid: true, schemaFailure: false, unsafeTarget: false }
+      { scenario: 'visible_target', valid: true, schemaFailure: false, unsafeTarget: false },
+      { scenario: 'uncraftable_item', valid: false, schemaFailure: false, unsafeTarget: true },
+      { scenario: 'unavailable_block', valid: false, schemaFailure: false, unsafeTarget: true }
     ])
   })
 
@@ -203,6 +209,10 @@ describe('BRAIN_BENCHMARK_SCENARIOS', () => {
       'nearby_external_player',
       'no_nearby_player',
       'useful_blocks_nearby',
+      'craftable_planks',
+      'craftable_table',
+      'table_recipe_available',
+      'safe_exploration',
       'previous_say',
       'repeated_idle',
       'self_only_player_identity'
@@ -216,6 +226,16 @@ describe('BRAIN_BENCHMARK_SCENARIOS', () => {
       BRAIN_BENCHMARK_SCENARIOS.find(item => item.id === 'repeated_idle')
         ?.samples,
       3
+    )
+    assert.deepEqual(
+      BRAIN_BENCHMARK_SCENARIOS.find(item => item.id === 'craftable_planks')
+        ?.input.perception.craftableItems,
+      [{ item: 'oak_planks', maxCraftable: 4, requiresTable: false }]
+    )
+    assert.equal(
+      BRAIN_BENCHMARK_SCENARIOS.find(item => item.id === 'table_recipe_available')
+        ?.input.perception.nearbyCraftingTable,
+      true
     )
   })
 })

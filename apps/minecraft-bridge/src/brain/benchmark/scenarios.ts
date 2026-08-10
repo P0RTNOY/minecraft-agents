@@ -29,6 +29,35 @@ export const BRAIN_BENCHMARK_SCENARIOS: readonly BrainBenchmarkScenario[] = [
       block('cobblestone', 4)
     ]
   }),
+  scenario('craftable_planks', 'A log can currently be crafted into planks.', {
+    inventory: [{ name: 'oak_log', count: 1 }],
+    craftableItems: [{
+      item: 'oak_planks',
+      maxCraftable: 4,
+      requiresTable: false
+    }]
+  }),
+  scenario('craftable_table', 'Inventory planks can currently form a crafting table.', {
+    inventory: [{ name: 'oak_planks', count: 4 }],
+    craftableItems: [{
+      item: 'crafting_table',
+      maxCraftable: 1,
+      requiresTable: false
+    }]
+  }),
+  scenario('table_recipe_available', 'A nearby table enables a table recipe.', {
+    inventory: [
+      { name: 'oak_planks', count: 3 },
+      { name: 'stick', count: 2 }
+    ],
+    craftableItems: [{
+      item: 'wooden_pickaxe',
+      maxCraftable: 1,
+      requiresTable: true
+    }],
+    nearbyCraftingTable: true
+  }),
+  scenario('safe_exploration', 'No useful resource or player is currently visible.', {}),
   scenario('previous_say', 'The previous action sent a chat message.', {
     previousActionResult: previousResult('say')
   }),
@@ -50,6 +79,8 @@ interface ScenarioOverrides {
   nearbyEntities?: BrainInput['perception']['nearbyEntities']
   inventory?: BrainInput['perception']['inventory']
   edibleItemCount?: number
+  craftableItems?: BrainInput['perception']['craftableItems']
+  nearbyCraftingTable?: boolean
   previousActionResult?: DecisionExecutionResult
 }
 
@@ -72,8 +103,8 @@ function scenario(
         nearbyEntities: overrides.nearbyEntities ?? [],
         inventory: overrides.inventory ?? [],
         edibleItemCount: overrides.edibleItemCount ?? 0,
-        craftableItems: [],
-        nearbyCraftingTable: false,
+        craftableItems: overrides.craftableItems ?? [],
+        nearbyCraftingTable: overrides.nearbyCraftingTable ?? false,
         equippedItem: null,
         placeableBlocks: []
       },

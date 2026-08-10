@@ -91,6 +91,74 @@ describe('assessRepetition', () => {
       { allowed: true }
     )
   })
+
+  it('rejects a third identical successful progress action when state is unchanged', () => {
+    const decisions: AgentDecision[] = [
+      { action: 'explore', reason: 'Look north.' },
+      { action: 'craft_item', item: 'oak_planks', amount: 4, reason: 'Make planks.' },
+      { action: 'place_block', block: 'crafting_table', reason: 'Set up.' },
+      { action: 'collect_block', block: 'oak_log', reason: 'Gather wood.' }
+    ]
+
+    for (const decision of decisions) {
+      const first = record(decision, baseInput)
+      const second = record({ ...decision, reason: 'Reworded reason.' }, baseInput)
+      const input = { ...baseInput, recentDecisions: [first, second] }
+
+      assert.deepEqual(
+        assessRepetition({ ...decision, reason: 'Another reason.' }, input),
+        { allowed: false, reason: 'stagnant_action' }
+      )
+    }
+  })
+
+  it('permits a repeated progress action after state or capability progress', () => {
+    const decision: AgentDecision = {
+      action: 'craft_item',
+      item: 'oak_planks',
+      amount: 4,
+      reason: 'Make planks.'
+    }
+    const first = record(decision, baseInput)
+    const second = record(decision, baseInput)
+    const changedInput: BrainInput = {
+      ...baseInput,
+      perception: {
+        ...baseInput.perception,
+        inventory: [{ name: 'oak_planks', count: 4 }],
+        craftableItems: [{
+          item: 'stick',
+          maxCraftable: 8,
+          requiresTable: false
+        }]
+      },
+      recentDecisions: [first, second]
+    }
+
+    assert.deepEqual(assessRepetition(decision, changedInput), { allowed: true })
+  })
+
+  it('permits different grounded parameters and ignores failed history', () => {
+    const prior = record({
+      action: 'craft_item',
+      item: 'oak_planks',
+      amount: 4,
+      reason: 'Make planks.'
+    }, baseInput)
+    const failed = {
+      ...prior,
+      result: { ...prior.result, success: false }
+    }
+    const input = { ...baseInput, recentDecisions: [prior, failed] }
+
+    assert.deepEqual(assessRepetition({
+      action: 'craft_item',
+      item: 'stick',
+      amount: 4,
+      reason: 'Make sticks.'
+    }, { ...baseInput, recentDecisions: [prior, prior] }), { allowed: true })
+    assert.deepEqual(assessRepetition(prior.decision, input), { allowed: true })
+  })
 })
 
 describe('recent decision history', () => {

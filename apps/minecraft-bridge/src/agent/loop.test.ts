@@ -375,6 +375,34 @@ describe('AutonomousAgentLoop', () => {
     assert.equal((await loop.runCycle()).status, 'policy_rejected')
     assert.equal(executions, 2)
   })
+
+  it('does not execute a third identical progress action without observed progress', async () => {
+    let executions = 0
+    const loop = createLoop({
+      provider: {
+        decide: async () => ({
+          action: 'explore',
+          reason: `Explore attempt ${executions + 1}.`
+        })
+      },
+      execute: async (_bot, decision) => {
+        executions += 1
+        return executionFor(decision)
+      }
+    })
+
+    assert.equal((await loop.runCycle()).status, 'executed')
+    assert.equal((await loop.runCycle()).status, 'executed')
+    assert.deepEqual(await loop.runCycle(), {
+      status: 'policy_rejected',
+      reason: 'stagnant_action',
+      decision: {
+        action: 'explore',
+        reason: 'Explore attempt 3.'
+      }
+    })
+    assert.equal(executions, 2)
+  })
 })
 
 function createLoop(

@@ -66,7 +66,7 @@ export type BrainCycleResult =
   | { status: 'validation_failed'; issues: string[] }
   | {
       status: 'policy_rejected'
-      reason: 'duplicate_say' | 'stagnant_idle'
+      reason: 'duplicate_say' | 'stagnant_idle' | 'stagnant_action'
       decision: AgentDecision
     }
   | { status: 'provider_failed'; error: string }
@@ -271,7 +271,10 @@ function formatDecision(decision: AgentDecision): string {
     case 'come_to_player':
       return `${decision.action}(${decision.username})`
     case 'collect_block':
+    case 'place_block':
       return `${decision.action}(${decision.block})`
+    case 'craft_item':
+      return `${decision.action}(${decision.item}, ${decision.amount})`
     case 'say':
       return `${decision.action}(${JSON.stringify(decision.message)})`
     default:

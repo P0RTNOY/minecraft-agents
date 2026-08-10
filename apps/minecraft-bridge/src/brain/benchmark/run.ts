@@ -1,7 +1,8 @@
 import type { LLMProvider } from '../provider.js'
 import {
   appendRecentDecision,
-  createRecentDecision
+  createRecentDecision,
+  decisionSignature
 } from '../repetition.js'
 import { buildDecisionContext } from '../semantics.js'
 import type {
@@ -153,20 +154,6 @@ function baseResult(
     unsafeTarget: false,
     schemaFailure: false,
     error
-  }
-}
-
-function decisionSignature(decision: AgentDecision): string {
-  switch (decision.action) {
-    case 'follow_player':
-    case 'come_to_player':
-      return `${decision.action}:${decision.username.toLowerCase()}`
-    case 'collect_block':
-      return `${decision.action}:${decision.block}`
-    case 'say':
-      return `${decision.action}:${decision.message.trim().toLowerCase()}`
-    default:
-      return decision.action
   }
 }
 
