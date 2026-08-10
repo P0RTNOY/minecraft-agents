@@ -16,6 +16,7 @@ export interface EntityObservation {
   id: number
   name: string
   type: string
+  category: string | null
   distance: number
   position: PositionSnapshot
 }
@@ -31,4 +32,5 @@ export interface PerceptionSnapshot {
   nearbyBlocks: BlockObservation[]
   nearbyEntities: EntityObservation[]
   inventory: InventoryItemSnapshot[]
+  edibleItemCount: number
 }

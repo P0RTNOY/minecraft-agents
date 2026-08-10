@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 
 import {
+  DECISION_JSON_SCHEMA,
   serializeBrainInput,
   SYSTEM_INSTRUCTION
 } from './decisionContract.js'
@@ -17,7 +18,8 @@ const input: BrainInput = {
     food: 20,
     nearbyBlocks: [],
     nearbyEntities: [],
-    inventory: []
+    inventory: [],
+    edibleItemCount: 0
   },
   state: {
     agentName: 'Alice',
@@ -73,5 +75,13 @@ describe('Brain decision contract', () => {
       }
     }])
     assert.doesNotMatch(json, /internal-only/)
+  })
+
+  it('keeps survival actions out of the deliberate Brain vocabulary', () => {
+    const contract = JSON.stringify(DECISION_JSON_SCHEMA)
+
+    assert.doesNotMatch(contract, /flee_from_entity/)
+    assert.doesNotMatch(contract, /"eat"/)
+    assert.doesNotMatch(SYSTEM_INSTRUCTION, /flee_from_entity/)
   })
 })

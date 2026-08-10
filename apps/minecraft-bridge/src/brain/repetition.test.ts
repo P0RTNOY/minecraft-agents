@@ -23,7 +23,8 @@ const baseInput: BrainInput = {
     food: 20,
     nearbyBlocks: [],
     nearbyEntities: [],
-    inventory: []
+    inventory: [],
+    edibleItemCount: 0
   },
   state: {
     agentName: 'Alice',

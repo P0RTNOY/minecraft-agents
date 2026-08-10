@@ -42,6 +42,7 @@ const input: BrainInput = {
         id: 1,
         name: 'Alice',
         type: 'player',
+        category: 'UNKNOWN',
         distance: 0,
         position: { x: 1, y: 64, z: 2 }
       },
@@ -49,6 +50,7 @@ const input: BrainInput = {
         id: 2,
         name: 'Steve',
         type: 'player',
+        category: 'UNKNOWN',
         distance: 4.24,
         position: { x: 4, y: 64, z: 5 }
       },
@@ -56,11 +58,13 @@ const input: BrainInput = {
         id: 3,
         name: 'zombie',
         type: 'mob',
+        category: 'Hostile mobs',
         distance: 6.25,
         position: { x: 6, y: 64, z: 3 }
       }
     ],
-    inventory: []
+    inventory: [{ name: 'apple', count: 2 }],
+    edibleItemCount: 2
   },
   state: {
     agentName: 'Alice',
@@ -80,6 +84,11 @@ describe('buildBrainSemantics', () => {
       self: { username: 'Alice' },
       health: { current: 7.95, max: 20, status: 'low' },
       food: { current: 15, max: 20, status: 'healthy' },
+      threats: {
+        nearestHostile: { name: 'zombie', distance: 6.3 },
+        nearestCreeper: null
+      },
+      inventory: { edibleItemCount: 2, hasFood: true },
       externalVisiblePlayers: [{ username: 'Steve', distance: 4.2 }],
       nearbyEntities: [{ name: 'zombie', type: 'mob', distance: 6.3 }]
     })
@@ -117,6 +126,15 @@ describe('buildBrainSemantics', () => {
     assert.deepEqual(serialized.perception.nearbyEntities, [
       { name: 'zombie', type: 'mob', distance: 6.3 }
     ])
+    assert.deepEqual(serialized.perception.threats, {
+      nearestHostile: { name: 'zombie', distance: 6.3 },
+      nearestCreeper: null
+    })
+    assert.deepEqual(serialized.perception.inventory, {
+      items: [{ name: 'apple', count: 2 }],
+      edibleItemCount: 2,
+      hasFood: true
+    })
     assert.deepEqual(serialized.perception.self, { username: 'Alice' })
   })
 })

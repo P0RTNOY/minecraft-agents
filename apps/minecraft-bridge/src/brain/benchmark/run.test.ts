@@ -18,7 +18,8 @@ const baseInput: BrainInput = {
     food: 18,
     nearbyBlocks: [],
     nearbyEntities: [],
-    inventory: []
+    inventory: [],
+    edibleItemCount: 0
   },
   state: {
     agentName: 'Alice',
@@ -106,6 +107,7 @@ describe('runBrainBenchmark', () => {
           id: 7,
           name: 'Steve',
           type: 'player',
+          category: 'UNKNOWN',
           distance: 4,
           position: { x: 4, y: 64, z: 2 }
         }]

@@ -4,6 +4,8 @@ import type {
   EntityObservation,
   PerceptionSnapshot
 } from './types.js'
+import { getEntityName } from '../survival/hostility.js'
+import { countSafeFoodItems } from '../skills/eat.js'
 import { inspectInventory } from '../skills/inventory.js'
 
 export function perceive(
@@ -39,17 +41,24 @@ export function perceive(
 
   const nearbyEntities: EntityObservation[] = Object.values(bot.entities)
     .filter(entity => entity !== bot.entity)
-    .map(entity => ({
-      id: entity.id,
-      name: entity.username ?? entity.name ?? entity.type,
-      type: entity.type,
-      distance: bot.entity.position.distanceTo(entity.position),
-      position: {
-        x: entity.position.x,
-        y: entity.position.y,
-        z: entity.position.z
+    .map(entity => {
+      const registryName = getEntityName(entity)
+
+      return {
+        id: entity.id,
+        name: entity.username ?? registryName ?? entity.type,
+        type: entity.type,
+        category: registryName
+          ? bot.registry.entitiesByName[registryName]?.category ?? null
+          : null,
+        distance: bot.entity.position.distanceTo(entity.position),
+        position: {
+          x: entity.position.x,
+          y: entity.position.y,
+          z: entity.position.z
+        }
       }
-    }))
+    })
     .filter(entity => entity.distance <= entityRadius)
     .sort((a, b) => a.distance - b.distance)
 
@@ -70,6 +79,7 @@ export function perceive(
 
     nearbyBlocks,
     nearbyEntities,
-    inventory
+    inventory,
+    edibleItemCount: countSafeFoodItems(bot, inventory)
   }
 }

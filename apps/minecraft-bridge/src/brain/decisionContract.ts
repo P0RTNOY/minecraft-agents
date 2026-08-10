@@ -63,13 +63,17 @@ export function serializeBrainInput(input: BrainInput): unknown {
       },
       health: semantics.health,
       food: semantics.food,
+      threats: semantics.threats,
       externalVisiblePlayers: semantics.externalVisiblePlayers,
       nearbyBlocks: [...blockSummary.entries()].map(([name, summary]) => ({
         name,
         ...summary
       })),
       nearbyEntities: semantics.nearbyEntities,
-      inventory: input.perception.inventory
+      inventory: {
+        items: input.perception.inventory,
+        ...semantics.inventory
+      }
     },
     state: input.state,
     previousActionResult: input.previousActionResult,

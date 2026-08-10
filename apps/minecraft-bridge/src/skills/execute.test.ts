@@ -23,7 +23,8 @@ describe('decision executor', () => {
         food: 20,
         nearbyBlocks: [],
         nearbyEntities: [],
-        inventory: []
+        inventory: [],
+        edibleItemCount: 0
       }),
       followPlayer: (_bot, _state, username, source) => {
         calls.push(`follow:${username}:${source}`)

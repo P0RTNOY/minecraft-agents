@@ -28,6 +28,11 @@ export interface EatResult {
   error?: string
 }
 
+interface FoodStack {
+  name: string
+  count: number
+}
+
 const UNSAFE_FOOD_NAMES = new Set([
   'chicken',
   'chorus_fruit',
@@ -42,9 +47,19 @@ export function findSafeFood(bot: Bot): Item | null {
   return bot.inventory.items()
     .filter(item => isSafeFood(bot, item))
     .sort((left, right) => {
-      const foodDifference = foodPoints(bot, right) - foodPoints(bot, left)
+      const foodDifference = foodPoints(bot, right.name) -
+        foodPoints(bot, left.name)
       return foodDifference || left.name.localeCompare(right.name)
     })[0] ?? null
+}
+
+export function countSafeFoodItems(
+  bot: Bot,
+  items: readonly FoodStack[] = bot.inventory.items()
+): number {
+  return items
+    .filter(item => isSafeFood(bot, item))
+    .reduce((total, item) => total + item.count, 0)
 }
 
 export async function eatFood(
@@ -148,14 +163,14 @@ export async function eatFood(
   }
 }
 
-function isSafeFood(bot: Bot, item: Item): boolean {
+function isSafeFood(bot: Bot, item: FoodStack): boolean {
   return item.count > 0 &&
     !UNSAFE_FOOD_NAMES.has(item.name) &&
-    foodPoints(bot, item) > 0
+    foodPoints(bot, item.name) > 0
 }
 
-function foodPoints(bot: Bot, item: Item): number {
-  return bot.registry.foodsByName[item.name]?.foodPoints ?? 0
+function foodPoints(bot: Bot, itemName: string): number {
+  return bot.registry.foodsByName[itemName]?.foodPoints ?? 0
 }
 
 function cancelledResult(

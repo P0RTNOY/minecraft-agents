@@ -15,7 +15,8 @@ const brainInput: BrainInput = {
       { name: 'oak_log', distance: 2, position: { x: 2, y: 64, z: 2 } }
     ],
     nearbyEntities: [],
-    inventory: []
+    inventory: [],
+    edibleItemCount: 0
   },
   state: {
     agentName: 'Alice',

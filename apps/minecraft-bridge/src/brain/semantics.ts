@@ -1,5 +1,6 @@
 import type { BrainInput } from './types.js'
 import type { DecisionValidationContext } from './validateDecision.js'
+import { isObservedHostileEntity } from '../survival/hostility.js'
 
 export type SurvivalStatus = 'critical' | 'low' | 'healthy'
 
@@ -13,18 +14,43 @@ export interface BrainSemantics {
   self: { username: string }
   health: SurvivalMetric
   food: SurvivalMetric
+  threats: {
+    nearestHostile: ThreatSummary | null
+    nearestCreeper: ThreatSummary | null
+  }
+  inventory: { edibleItemCount: number; hasFood: boolean }
   externalVisiblePlayers: Array<{ username: string; distance: number }>
   nearbyEntities: Array<{ name: string; type: string; distance: number }>
+}
+
+interface ThreatSummary {
+  name: string
+  distance: number
 }
 
 export function buildBrainSemantics(input: BrainInput): BrainSemantics {
   const selfUsername = input.state.agentName
   const normalizedSelf = selfUsername.toLowerCase()
+  const hostiles = input.perception.nearbyEntities
+    .filter(isObservedHostileEntity)
+    .sort((left, right) => (
+      (left.distance - right.distance) || (left.id - right.id)
+    ))
+  const nearestHostile = hostiles[0] ?? null
+  const nearestCreeper = hostiles.find(entity => entity.name === 'creeper') ?? null
 
   return {
     self: { username: selfUsername },
     health: survivalMetric(input.perception.health, 'health'),
     food: survivalMetric(input.perception.food, 'food'),
+    threats: {
+      nearestHostile: threatSummary(nearestHostile),
+      nearestCreeper: threatSummary(nearestCreeper)
+    },
+    inventory: {
+      edibleItemCount: input.perception.edibleItemCount,
+      hasFood: input.perception.edibleItemCount > 0
+    },
     externalVisiblePlayers: input.perception.nearbyEntities
       .filter(entity => (
         entity.type.toLowerCase() === 'player' &&
@@ -41,6 +67,17 @@ export function buildBrainSemantics(input: BrainInput): BrainSemantics {
         type: entity.type,
         distance: round(entity.distance)
       }))
+  }
+}
+
+function threatSummary(
+  entity: BrainInput['perception']['nearbyEntities'][number] | null
+): ThreatSummary | null {
+  if (!entity) return null
+
+  return {
+    name: entity.name,
+    distance: round(entity.distance)
   }
 }
 

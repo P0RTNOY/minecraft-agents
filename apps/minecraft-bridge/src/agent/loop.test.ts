@@ -60,10 +60,12 @@ describe('AutonomousAgentLoop', () => {
           id: 1,
           name: 'Steve',
           type: 'player',
+          category: 'UNKNOWN',
           distance: 4,
           position: { x: 4, y: 64, z: 0 }
         }],
-        inventory: []
+        inventory: [],
+        edibleItemCount: 0
       }),
       execute: async (_bot, decision) => {
         executions += 1
@@ -103,7 +105,8 @@ describe('AutonomousAgentLoop', () => {
           position: { x: 3, y: 64, z: 0 }
         }],
         nearbyEntities: [],
-        inventory: []
+        inventory: [],
+        edibleItemCount: 0
       }),
       execute: async (_bot, decision) => {
         executions += 1
@@ -282,7 +285,8 @@ function createLoop(
       food: 20,
       nearbyBlocks: [],
       nearbyEntities: [],
-      inventory: []
+      inventory: [],
+      edibleItemCount: 0
     }),
     execute: async (_bot, decision) => executionFor(decision),
     logger: { log: () => {}, error: () => {} },
