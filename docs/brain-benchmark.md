@@ -82,3 +82,60 @@ LLM_PROVIDER=groq LLM_MODEL=openai/gpt-oss-20b npm run benchmark:brain
 ```
 
 No benchmark invoked Mineflayer skills, changed the Paper server, or modified the Minecraft world.
+
+## Autonomous Bootstrap / Goal-directed capability selection
+
+Date: 2026-08-10
+
+These are local engineering measurements for M3.1, not universal model rankings. This pass evaluates whether a provider can use application-owned goal progress and exact grounded capabilities over an evolving sequence. It supersedes the earlier fixed-scenario recommendation only for autonomous bootstrap work.
+
+### Sequential scenario and metric semantics
+
+The eight-cycle scenario begins healthy and safe with three `oak_log` items, no crafting table, no tool, and `oak_planks` reported as craftable. After a decision passes structural validation, contextual grounding, and repetition policy, the harness simulates only the supported inventory effects for planks, sticks, a crafting table, table placement, and a wooden pickaxe. The real `ShortTermGoalManager` recomputes goal progress and capabilities after each accepted transition. It does not simulate Minecraft physics or invoke Mineflayer skills.
+
+- Valid means the provider output matched the unchanged controlled decision schema.
+- Grounded means the decision also passed the production contextual validator.
+- Progress-producing means accepted simulated execution changed deterministic `goalProgress` facts.
+- No-progress includes structurally valid proposals rejected by grounding as well as accepted decisions that left goal progress unchanged.
+- Repeated no-progress compares exact structurally valid proposal signatures across consecutive cycles. Runtime repetition policy still decides whether a grounded proposal may execute.
+- Goal completion is application-owned: the bootstrap goal completes only after crafting access and a basic tool are observed.
+
+The final prompt is 995 characters / 139 whitespace-delimited words. It gives general progress and exact-capability grounding guidance, contains no recipe sequence, and retains the same ten decision actions.
+
+### Provider results
+
+Each Ollama model was explicitly warmed and then ran the same eight sequential decisions with `think: false`, `keep_alive: "10m"`, temperature `0.1`, `num_predict: 128`, and `num_ctx: 4096`.
+
+| Provider / model | Valid | Grounded | Policy accepted | Progress | No progress | Idle rate | Repeated no progress | Goal completion | Mean / median latency | Prompt / output tokens | Mean load | Mean output rate |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Ollama / llama3.2:latest | 8/8 | 7/8 | 2/8 | 0/8 | 8/8 | 0% | 6/8 | 0/1 | 1,493 / 1,214 ms | 5,005 / 145 | 272 ms | 22 tok/s |
+| Ollama / qwen3:1.7b | 8/8 | 0/8 | 0/8 | 0/8 | 8/8 | 0% | 5/8 | 0/1 | 1,032 / 892 ms | 4,544 / 200 | 154 ms | 35.8 tok/s |
+| Ollama / qwen3:4b | 8/8 | 0/8 | 0/8 | 0/8 | 8/8 | 0% | 7/8 | 0/1 | 2,622 / 2,262 ms | 4,496 / 280 | 185 ms | 17.5 tok/s |
+| Groq / openai/gpt-oss-20b | Not run | Not run | Not run | Not run | Not run | Not run | Not run | Not run | Not run | Not run | Not available | Missing pre-existing key |
+
+Notable failures:
+
+- `llama3.2:latest` first proposed an unavailable collection target, then alternated into repeated `explore` decisions. Two explorations were admitted before deterministic stagnation policy rejected later repetitions. The goal made no progress.
+- Both Qwen models repeatedly proposed `collect_block` for a block absent from observed nearby blocks. All proposals were schema-valid, but contextual validation rejected all eight before simulation or execution.
+- No model selected the currently grounded `craft_item(oak_planks, amount)` capability, so action diversity did not translate into goal progress and no model completed the bootstrap goal.
+- The Groq provider path and standard token-usage parsing are covered with deterministic mocks. No live Groq request was made because `GROQ_API_KEY` was absent; no secret was printed or stored.
+
+### Controlled live result
+
+The best-grounded local candidate, `llama3.2:latest`, ran for approximately two minutes against local Paper 1.21.11. Alice started with exactly three oak logs on a temporary 33×33 smooth-stone platform at Y=200, with barrier edges and an exploration radius of eight. Her pre-test position `(3.6986251284809826, 87, 5.3289531212420815)` and empty inventory were recorded first.
+
+Across ten timed LLM decisions, the model produced four successful bounded explorations, five grounded attempts to collect `smooth_stone` that failed runtime harvest revalidation safely, and one stale collection decision skipped when the existing Creeper reflex took priority. It never crafted, inventory remained three oak logs, goal progress did not change, and the goal did not complete. Mean request time was 3,870 ms, median was 4,203 ms, prompt/output totals were 7,764/263 tokens, mean reported load time was 564 ms, and mean generation speed was 17.3 tok/s. The first request included a 3,606 ms model load; subsequent reported loads were 185–404 ms.
+
+The Creeper reflex demonstrated the intended arbitration boundary: it preempted a stale autonomous action and reported a successful escape. The test then stopped. Alice was cleared back to her verified empty inventory, teleported to the exact recorded position, and the exact `x=-16..16`, `y=199..202`, `z=-16..16` test volume was filled with air. Final server checks confirmed the empty inventory and restored position. Paper was left running because it was running before the test.
+
+### Recommendation
+
+For this goal-directed bootstrap workload, use `llama3.2:latest` as the local development default because it had the highest grounding rate (7/8) and its bad semantic choices remained inside both contextual and runtime safety boundaries. `qwen3:1.7b` is the latency leader, but 0/8 grounded decisions makes it a poor autonomy default for this scenario. No tested local model is yet reliable enough to call bootstrap-capable, and no remote recommendation can be made without a measured Groq run.
+
+Reproduce the automated comparison from `apps/minecraft-bridge` with:
+
+```sh
+LLM_PROVIDER=ollama LLM_MODEL=llama3.2:latest npm run benchmark:brain
+LLM_PROVIDER=ollama LLM_MODEL=qwen3:1.7b npm run benchmark:brain
+LLM_PROVIDER=ollama LLM_MODEL=qwen3:4b npm run benchmark:brain
+```
