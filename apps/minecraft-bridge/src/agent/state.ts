@@ -3,14 +3,24 @@ export type AgentStatus =
   | 'moving'
   | 'following'
   | 'collecting'
+  | 'exploring'
+  | 'crafting'
+  | 'placing'
+  | 'fleeing'
+  | 'eating'
 
 export type AgentAction =
   | 'come_to_player'
   | 'follow_player'
   | 'follow_nearest_player'
   | 'collect_block'
+  | 'explore'
+  | 'craft_item'
+  | 'place_block'
+  | 'flee_from_entity'
+  | 'eat'
 
-export type AgentActionSource = 'manual' | 'autonomous'
+export type AgentActionSource = 'manual' | 'reflex' | 'autonomous'
 
 export interface AgentState {
   agentName: string

@@ -16,6 +16,9 @@ describe('validateDecision', () => {
       [{ action: 'scan', reason: 'Observe nearby terrain.' }, {
         action: 'scan', reason: 'Observe nearby terrain.'
       }],
+      [{ action: 'explore', reason: 'Search for useful terrain.' }, {
+        action: 'explore', reason: 'Search for useful terrain.'
+      }],
       [{ action: 'follow_player', username: 'Steve_1', reason: 'Stay nearby.' }, {
         action: 'follow_player', username: 'Steve_1', reason: 'Stay nearby.'
       }],
@@ -27,6 +30,12 @@ describe('validateDecision', () => {
       }],
       [{ action: 'collect_block', block: 'oak_log', reason: 'Gather wood.' }, {
         action: 'collect_block', block: 'oak_log', reason: 'Gather wood.'
+      }],
+      [{ action: 'craft_item', item: 'oak_planks', amount: 4, reason: 'Make planks.' }, {
+        action: 'craft_item', item: 'oak_planks', amount: 4, reason: 'Make planks.'
+      }],
+      [{ action: 'place_block', block: 'crafting_table', reason: 'Place a table.' }, {
+        action: 'place_block', block: 'crafting_table', reason: 'Place a table.'
       }],
       [{ action: 'say', message: 'Hello, Steve!', reason: 'Be friendly.' }, {
         action: 'say', message: 'Hello, Steve!', reason: 'Be friendly.'
@@ -109,13 +118,193 @@ describe('validateDecision', () => {
       reason: 'Unsafe chat command.'
     })
     const extraField = validateDecision({
-      action: 'idle',
-      reason: 'Wait.',
+      action: 'explore',
+      reason: 'Search nearby.',
       coordinates: [0, 64, 0]
     })
 
     assert.equal(invalidBlock.success, false)
     assert.equal(commandMessage.success, false)
     assert.equal(extraField.success, false)
+  })
+
+  it('accepts only visible external players when context is provided', () => {
+    const context = {
+      selfUsername: 'Alice',
+      visibleExternalPlayers: ['Bob'],
+      visibleNearbyBlocks: []
+    }
+    const selfTarget = validateDecision({
+      action: 'come_to_player',
+      username: 'Alice',
+      reason: 'Meet Alice.'
+    }, context)
+    const hallucinatedTarget = validateDecision({
+      action: 'follow_player',
+      username: 'Dave',
+      reason: 'Follow Dave.'
+    }, context)
+    const externalTarget = validateDecision({
+      action: 'follow_player',
+      username: 'bob',
+      reason: 'Follow the visible player.'
+    }, context)
+
+    assert.equal(selfTarget.success, false)
+    assert.equal(hallucinatedTarget.success, false)
+    assert.deepEqual(externalTarget, {
+      success: true,
+      decision: {
+        action: 'follow_player',
+        username: 'Bob',
+        reason: 'Follow the visible player.'
+      }
+    })
+  })
+
+  it('accepts an exact observed block name when context is provided', () => {
+    const observed = validateDecision({
+      action: 'collect_block',
+      block: ' bamboo ',
+      reason: 'Gather bamboo.'
+    }, {
+      selfUsername: 'Alice',
+      visibleExternalPlayers: ['Steve'],
+      visibleNearbyBlocks: ['grass_block', 'dirt', 'bamboo']
+    })
+
+    assert.deepEqual(observed, {
+      success: true,
+      decision: {
+        action: 'collect_block',
+        block: 'bamboo',
+        reason: 'Gather bamboo.'
+      }
+    })
+  })
+
+  it('rejects an unobserved block name', () => {
+    const unobserved = validateDecision({
+      action: 'collect_block',
+      block: 'oak_log',
+      reason: 'Gather wood.'
+    }, {
+      selfUsername: 'Alice',
+      visibleExternalPlayers: [],
+      visibleNearbyBlocks: ['grass_block', 'dirt', 'bamboo']
+    })
+
+    assert.equal(unobserved.success, false)
+    if (!unobserved.success) {
+      assert.equal(
+        unobserved.issues.some(issue => (
+          issue.path === 'block' && /observed nearby block/.test(issue.message)
+        )),
+        true
+      )
+    }
+  })
+
+  it('rejects collection when no nearby blocks were observed', () => {
+    const emptyPerception = validateDecision({
+      action: 'collect_block',
+      block: 'bamboo',
+      reason: 'Gather bamboo.'
+    }, {
+      selfUsername: 'Alice',
+      visibleExternalPlayers: [],
+      visibleNearbyBlocks: []
+    })
+
+    assert.equal(emptyPerception.success, false)
+  })
+
+  it('rejects malformed block names without fuzzy normalization', () => {
+    const malformed = validateDecision({
+      action: 'collect_block',
+      block: 'Bamboo',
+      reason: 'Gather bamboo.'
+    }, {
+      selfUsername: 'Alice',
+      visibleExternalPlayers: [],
+      visibleNearbyBlocks: ['bamboo']
+    })
+
+    assert.equal(malformed.success, false)
+  })
+
+  it('accepts only exact currently craftable items within the reported maximum', () => {
+    const context = {
+      selfUsername: 'Alice',
+      visibleExternalPlayers: [],
+      visibleNearbyBlocks: [],
+      craftableItems: [{
+        item: 'oak_planks',
+        recipeOutput: 4,
+        maxCraftable: 8,
+        requiresTable: false
+      }]
+    }
+
+    assert.equal(validateDecision({
+      action: 'craft_item',
+      item: 'oak_planks',
+      amount: 4,
+      reason: 'Need planks.'
+    }, context).success, true)
+    assert.equal(validateDecision({
+      action: 'craft_item',
+      item: 'diamond_pickaxe',
+      amount: 1,
+      reason: 'Upgrade.'
+    }, context).success, false)
+    assert.equal(validateDecision({
+      action: 'craft_item',
+      item: 'oak_planks',
+      amount: 2,
+      reason: 'Need a partial batch.'
+    }, context).success, false)
+    assert.equal(validateDecision({
+      action: 'craft_item',
+      item: 'oak_planks',
+      amount: 9,
+      reason: 'Need many planks.'
+    }, context).success, false)
+  })
+
+  it('rejects malformed crafting item names and invalid amounts', () => {
+    for (const decision of [
+      { action: 'craft_item', item: 'Oak Planks', amount: 4, reason: 'Craft.' },
+      { action: 'craft_item', item: 'oak_planks', amount: 0, reason: 'Craft.' },
+      { action: 'craft_item', item: 'oak_planks', amount: 1.5, reason: 'Craft.' },
+      { action: 'craft_item', item: 'oak_planks', amount: 65, reason: 'Craft.' }
+    ]) {
+      assert.equal(validateDecision(decision).success, false)
+    }
+  })
+
+  it('accepts only exact currently placeable inventory blocks', () => {
+    const context = {
+      selfUsername: 'Alice',
+      visibleExternalPlayers: [],
+      visibleNearbyBlocks: [],
+      placeableBlocks: [{ name: 'crafting_table', count: 1 }]
+    }
+
+    assert.equal(validateDecision({
+      action: 'place_block',
+      block: 'crafting_table',
+      reason: 'Use the table.'
+    }, context).success, true)
+    assert.equal(validateDecision({
+      action: 'place_block',
+      block: 'tnt',
+      reason: 'Place TNT.'
+    }, context).success, false)
+    assert.equal(validateDecision({
+      action: 'place_block',
+      block: 'Crafting_Table',
+      reason: 'Use the table.'
+    }, context).success, false)
   })
 })

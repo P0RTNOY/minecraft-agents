@@ -7,20 +7,441 @@ import {
   createAgentState,
   markManualOverride
 } from './state.js'
-import type { AgentDecision } from '../brain/types.js'
+import { ActionArbiter } from './actionArbiter.js'
+import type { AgentDecision, BrainInput } from '../brain/types.js'
 import type { LLMProvider } from '../brain/provider.js'
 import {
   AutonomousAgentLoop,
   type AgentLoopOptions
 } from './loop.js'
+import type {
+  AgentMemory,
+  MemoryCycleEvent
+} from '../memory/coordinator.js'
 
 const fakeBot = {} as Bot
 
 describe('AutonomousAgentLoop', () => {
+  it('retrieves memory before provider input and records after execution', async () => {
+    const order: string[] = []
+    const recorded: MemoryCycleEvent[] = []
+    const loop = createLoop({
+      memory: memoryDouble({
+        retrieve: async () => {
+          order.push('retrieve')
+          return {
+            context: {
+              recentEpisodes: [{
+                type: 'action_failure',
+                summary: 'A prior attempt failed.',
+                importance: 6,
+                age: 'recent',
+                region: '0:0'
+              }],
+              relevantFacts: []
+            }
+          }
+        },
+        record: async event => {
+          order.push('record')
+          recorded.push(event)
+          return { episodesCreated: 1, semanticFactsCreated: 0 }
+        }
+      }),
+      provider: {
+        decide: async input => {
+          order.push('provider')
+          assert.equal(input.memory.recentEpisodes.length, 1)
+          return { action: 'idle', reason: 'Wait.' }
+        }
+      },
+      execute: async (_bot, decision) => {
+        order.push('execute')
+        return executionFor(decision)
+      }
+    })
+
+    const result = await loop.runCycle()
+
+    assert.equal(result.status, 'executed')
+    assert.deepEqual(order, ['retrieve', 'provider', 'execute', 'record'])
+    assert.equal(recorded[0]?.decision.action, 'idle')
+    assert.equal(recorded[0]?.result.success, true)
+  })
+
+  it('records failed controlled outcomes and completed goal transitions', async () => {
+    const recorded: MemoryCycleEvent[] = []
+    const loop = createLoop({
+      memory: memoryDouble({
+        record: async event => {
+          recorded.push(event)
+          return { episodesCreated: 1, semanticFactsCreated: 0 }
+        }
+      }),
+      goalManager: {
+        update: () => ({
+          shortTermGoal: null,
+          goalProgress: null,
+          availableCapabilities: {
+            observedCollectableBlocks: [],
+            craftableItems: [],
+            placeableBlocks: [],
+            canExplore: true
+          },
+          transition: {
+            completedGoal: {
+              id: 'goal-1',
+              type: 'establish_basic_resources',
+              description: 'Bootstrap.',
+              status: 'completed'
+            },
+            nextGoal: null
+          }
+        })
+      },
+      provider: {
+        decide: async () => ({ action: 'explore', reason: 'Explore.' })
+      },
+      execute: async () => ({
+        success: false,
+        action: 'explore',
+        status: 'failed',
+        summary: 'Navigation failed.',
+        details: { reason: 'navigation_failed' }
+      })
+    })
+
+    await loop.runCycle()
+
+    assert.equal(recorded.length, 1)
+    assert.equal(recorded[0]?.result.success, false)
+    assert.equal(
+      recorded[0]?.goalTransition?.completedGoal?.type,
+      'establish_basic_resources'
+    )
+  })
+
+  it('uses empty history after a memory failure without bypassing decisions', async () => {
+    let executions = 0
+    const loop = createLoop({
+      memory: memoryDouble({
+        retrieve: async () => {
+          throw new Error('memory unavailable')
+        }
+      }),
+      provider: {
+        decide: async input => {
+          assert.deepEqual(input.memory, {
+            recentEpisodes: [],
+            relevantFacts: []
+          })
+          return { action: 'idle', reason: 'Wait.' }
+        }
+      },
+      execute: async (_bot, decision) => {
+        executions += 1
+        return executionFor(decision)
+      }
+    })
+
+    assert.equal((await loop.runCycle()).status, 'executed')
+    assert.equal(executions, 1)
+  })
+
+  it('does not change a successful cycle when memory persistence fails', async () => {
+    const loop = createLoop({
+      memory: memoryDouble({
+        record: async () => {
+          throw new Error('memory write unavailable')
+        }
+      })
+    })
+
+    const result = await loop.runCycle()
+
+    assert.equal(result.status, 'executed')
+    if (result.status === 'executed') {
+      assert.equal(result.result.success, true)
+    }
+  })
+
+  it('does not ground a target that exists only in memory', async () => {
+    let executions = 0
+    const loop = createLoop({
+      memory: memoryDouble({
+        retrieve: async () => ({
+          context: {
+            recentEpisodes: [],
+            relevantFacts: [{
+              subject: 'diamond_ore',
+              relation: 'resource_observed_near',
+              object: 'region:0:0',
+              confidence: 1,
+              status: 'historical',
+              age: 'recent'
+            }]
+          }
+        })
+      }),
+      provider: {
+        decide: async () => ({
+          action: 'collect_block',
+          block: 'diamond_ore',
+          reason: 'Collect remembered ore.'
+        })
+      },
+      execute: async () => {
+        executions += 1
+        return successfulIdleResult()
+      }
+    })
+
+    assert.equal((await loop.runCycle()).status, 'validation_failed')
+    assert.equal(executions, 0)
+  })
+
+  it('provides current goal progress and grounded capabilities to the Brain', async () => {
+    const observedInputs: BrainInput[] = []
+    const loop = createLoop({
+      provider: {
+        decide: async input => {
+          observedInputs.push(input)
+          return { action: 'idle', reason: 'Wait.' }
+        }
+      },
+      observe: () => ({
+        agent: 'Alice',
+        timestamp: 1,
+        position: { x: 0, y: 64, z: 0 },
+        health: 20,
+        food: 20,
+        nearbyBlocks: [{
+          name: 'oak_log',
+          distance: 3,
+          position: { x: 3, y: 64, z: 0 }
+        }],
+        nearbyEntities: [],
+        inventory: [{ name: 'oak_log', count: 1 }],
+        edibleItemCount: 0,
+        craftableItems: [{
+          item: 'oak_planks',
+          recipeOutput: 4,
+          maxCraftable: 4,
+          requiresTable: false
+        }],
+        nearbyCraftingTable: false,
+        equippedItem: null,
+        placeableBlocks: []
+      })
+    })
+
+    await loop.runCycle()
+    const observedInput = observedInputs[0]
+
+    assert.ok(observedInput)
+    assert.equal(
+      observedInput?.shortTermGoal?.type,
+      'establish_basic_resources'
+    )
+    assert.equal(observedInput?.goalProgress?.hasWood, true)
+    assert.deepEqual(observedInput?.availableCapabilities, {
+      observedCollectableBlocks: ['oak_log'],
+      craftableItems: [{
+        item: 'oak_planks',
+        recipeOutput: 4,
+        maxCraftable: 4,
+        requiresTable: false
+      }],
+      placeableBlocks: [],
+      canExplore: true
+    })
+  })
+
+  it('withholds an advisory goal from the Brain during an emergency', async () => {
+    const observedInputs: BrainInput[] = []
+    const loop = createLoop({
+      provider: {
+        decide: async input => {
+          observedInputs.push(input)
+          return { action: 'idle', reason: 'Wait.' }
+        }
+      },
+      observe: () => ({
+        agent: 'Alice',
+        timestamp: 1,
+        position: { x: 0, y: 64, z: 0 },
+        health: 20,
+        food: 20,
+        nearbyBlocks: [],
+        nearbyEntities: [{
+          id: 9,
+          name: 'creeper',
+          type: 'mob',
+          category: 'Hostile mobs',
+          distance: 3,
+          position: { x: 3, y: 64, z: 0 }
+        }],
+        inventory: [],
+        edibleItemCount: 0,
+        craftableItems: [],
+        nearbyCraftingTable: false,
+        equippedItem: null,
+        placeableBlocks: []
+      })
+    })
+
+    await loop.runCycle()
+    const observedInput = observedInputs[0]
+
+    assert.ok(observedInput)
+    assert.equal(observedInput?.shortTermGoal, null)
+    assert.equal(observedInput?.goalProgress, null)
+  })
+
   it('does not execute invalid provider output', async () => {
     let executions = 0
     const loop = createLoop({
       provider: { decide: async () => ({ action: 'run_shell', command: 'rm' }) },
+      execute: async () => {
+        executions += 1
+        return successfulIdleResult()
+      }
+    })
+
+    const result = await loop.runCycle()
+
+    assert.equal(result.status, 'validation_failed')
+    assert.equal(executions, 0)
+  })
+
+  it('does not execute self or hallucinated player targets', async () => {
+    const decisions = [
+      { action: 'come_to_player', username: 'Alice', reason: 'Meet Alice.' },
+      { action: 'follow_player', username: 'Dave', reason: 'Follow Dave.' },
+      { action: 'follow_player', username: 'Bob', reason: 'Follow Bob.' }
+    ]
+    let providerCalls = 0
+    let executions = 0
+    const loop = createLoop({
+      provider: {
+        decide: async () => {
+          const decision = decisions[providerCalls]
+          providerCalls += 1
+          return decision
+        }
+      },
+      observe: () => ({
+        agent: 'Alice',
+        timestamp: 1,
+        position: { x: 0, y: 64, z: 0 },
+        health: 20,
+        food: 20,
+        nearbyBlocks: [],
+        nearbyEntities: [{
+          id: 1,
+          name: 'Bob',
+          type: 'player',
+          category: 'UNKNOWN',
+          distance: 4,
+          position: { x: 4, y: 64, z: 0 }
+        }],
+        inventory: [],
+        edibleItemCount: 0,
+        craftableItems: [],
+        nearbyCraftingTable: false,
+        equippedItem: null,
+        placeableBlocks: []
+      }),
+      execute: async (_bot, decision) => {
+        executions += 1
+        return executionFor(decision)
+      }
+    })
+
+    const selfTarget = await loop.runCycle()
+    const hallucinatedTarget = await loop.runCycle()
+    const externalTarget = await loop.runCycle()
+
+    assert.equal(selfTarget.status, 'validation_failed')
+    assert.equal(hallucinatedTarget.status, 'validation_failed')
+    assert.equal(externalTarget.status, 'executed')
+    assert.equal(executions, 1)
+  })
+
+  it('does not execute an unobserved collection target', async () => {
+    let executions = 0
+    const loop = createLoop({
+      provider: {
+        decide: async () => ({
+          action: 'collect_block',
+          block: 'oak_log',
+          reason: 'Gather wood.'
+        })
+      },
+      observe: () => ({
+        agent: 'Alice',
+        timestamp: 1,
+        position: { x: 0, y: 64, z: 0 },
+        health: 20,
+        food: 20,
+        nearbyBlocks: [{
+          name: 'bamboo',
+          distance: 3,
+          position: { x: 3, y: 64, z: 0 }
+        }],
+        nearbyEntities: [],
+        inventory: [],
+        edibleItemCount: 0,
+        craftableItems: [],
+        nearbyCraftingTable: false,
+        equippedItem: null,
+        placeableBlocks: []
+      }),
+      execute: async (_bot, decision) => {
+        executions += 1
+        return executionFor(decision)
+      }
+    })
+
+    const result = await loop.runCycle()
+
+    assert.equal(result.status, 'validation_failed')
+    assert.equal(executions, 0)
+  })
+
+  it('does not execute an item outside the current craftability context', async () => {
+    let executions = 0
+    const loop = createLoop({
+      provider: {
+        decide: async () => ({
+          action: 'craft_item',
+          item: 'diamond_pickaxe',
+          amount: 1,
+          reason: 'Upgrade tools.'
+        })
+      },
+      execute: async () => {
+        executions += 1
+        return successfulIdleResult()
+      }
+    })
+
+    const result = await loop.runCycle()
+
+    assert.equal(result.status, 'validation_failed')
+    assert.equal(executions, 0)
+  })
+
+  it('does not execute a block outside the current placement context', async () => {
+    let executions = 0
+    const loop = createLoop({
+      provider: {
+        decide: async () => ({
+          action: 'place_block',
+          block: 'tnt',
+          reason: 'Place TNT.'
+        })
+      },
       execute: async () => {
         executions += 1
         return successfulIdleResult()
@@ -63,6 +484,51 @@ describe('AutonomousAgentLoop', () => {
     assert.equal(completedCycle.status, 'executed')
     assert.equal(providerCalls, 1)
     assert.equal(executions, 1)
+  })
+
+  it('waits for an in-flight cycle to become idle after stop', async () => {
+    const decision = deferred<unknown>()
+    const loop = createLoop({
+      provider: { decide: async () => decision.promise }
+    })
+    const cycle = loop.runCycle()
+    await Promise.resolve()
+
+    loop.stop()
+    const idle = loop.waitForIdle()
+    let idleResolved = false
+    void idle.then(() => { idleResolved = true })
+    await Promise.resolve()
+    assert.equal(idleResolved, false)
+
+    decision.resolve({ action: 'idle', reason: 'Wait.' })
+    await cycle
+    await idle
+    assert.equal(idleResolved, true)
+  })
+
+  it('does not execute a provider decision that arrives after stop', async () => {
+    const decision = deferred<unknown>()
+    let executions = 0
+    const loop = createLoop({
+      provider: { decide: async () => decision.promise },
+      execute: async () => {
+        executions += 1
+        return successfulIdleResult()
+      }
+    })
+    const cycle = loop.runCycle()
+    await Promise.resolve()
+
+    loop.stop()
+    decision.resolve({ action: 'explore', reason: 'Explore.' })
+
+    assert.deepEqual(await cycle, {
+      status: 'skipped',
+      reason: 'loop_stopped'
+    })
+    assert.equal(executions, 0)
+    await loop.waitForIdle()
   })
 
   it('handles provider failure and allows a future cycle to retry', async () => {
@@ -109,6 +575,31 @@ describe('AutonomousAgentLoop', () => {
     assert.equal(executions, 0)
   })
 
+  it('discards a pending decision after a reflex interrupts its generation', async () => {
+    const decision = deferred<unknown>()
+    const arbiter = new ActionArbiter()
+    let executions = 0
+    const loop = createLoop({
+      arbiter,
+      provider: { decide: async () => decision.promise },
+      execute: async () => {
+        executions += 1
+        return successfulIdleResult()
+      }
+    })
+
+    const cycle = loop.runCycle()
+    await Promise.resolve()
+    arbiter.interrupt('reflex')
+    decision.resolve({ action: 'idle', reason: 'Wait.' })
+
+    assert.deepEqual(await cycle, {
+      status: 'skipped',
+      reason: 'priority_override'
+    })
+    assert.equal(executions, 0)
+  })
+
   it('does not interrupt an active manual skill on a later cycle', async () => {
     const state = createAgentState('Alice')
     let providerCalls = 0
@@ -135,6 +626,108 @@ describe('AutonomousAgentLoop', () => {
     })
     assert.equal(providerCalls, 0)
   })
+
+  for (const source of ['reflex', 'autonomous'] as const) {
+    it(`does not start an LLM cycle during an active ${source} skill`, async () => {
+      const state = createAgentState('Alice')
+      let providerCalls = 0
+      beginAgentAction(
+        state,
+        source === 'reflex' ? 'fleeing' : 'following',
+        source === 'reflex' ? 'flee_from_entity' : 'follow_player',
+        source === 'reflex' ? 'Escape creeper' : 'Follow Steve',
+        source
+      )
+      const loop = createLoop({
+        state,
+        provider: {
+          decide: async () => {
+            providerCalls += 1
+            return { action: 'idle', reason: 'Wait.' }
+          }
+        }
+      })
+
+      assert.deepEqual(await loop.runCycle(), {
+        status: 'skipped',
+        reason: 'action_in_progress'
+      })
+      assert.equal(providerCalls, 0)
+    })
+  }
+
+  it('rejects repeated chat without executing it twice', async () => {
+    let executions = 0
+    const loop = createLoop({
+      provider: {
+        decide: async () => ({
+          action: 'say',
+          message: 'Hello there!',
+          reason: 'Greet the area.'
+        })
+      },
+      execute: async (_bot, decision) => {
+        executions += 1
+        return executionFor(decision)
+      }
+    })
+
+    assert.equal((await loop.runCycle()).status, 'executed')
+    assert.deepEqual(await loop.runCycle(), {
+      status: 'policy_rejected',
+      reason: 'duplicate_say',
+      decision: {
+        action: 'say',
+        message: 'Hello there!',
+        reason: 'Greet the area.'
+      }
+    })
+    assert.equal(executions, 1)
+  })
+
+  it('rejects a third idle in unchanged observations', async () => {
+    let executions = 0
+    const loop = createLoop({
+      provider: { decide: async () => ({ action: 'idle', reason: 'Wait.' }) },
+      execute: async (_bot, decision) => {
+        executions += 1
+        return executionFor(decision)
+      }
+    })
+
+    assert.equal((await loop.runCycle()).status, 'executed')
+    assert.equal((await loop.runCycle()).status, 'executed')
+    assert.equal((await loop.runCycle()).status, 'policy_rejected')
+    assert.equal(executions, 2)
+  })
+
+  it('does not execute a third identical progress action without observed progress', async () => {
+    let executions = 0
+    const loop = createLoop({
+      provider: {
+        decide: async () => ({
+          action: 'explore',
+          reason: `Explore attempt ${executions + 1}.`
+        })
+      },
+      execute: async (_bot, decision) => {
+        executions += 1
+        return executionFor(decision)
+      }
+    })
+
+    assert.equal((await loop.runCycle()).status, 'executed')
+    assert.equal((await loop.runCycle()).status, 'executed')
+    assert.deepEqual(await loop.runCycle(), {
+      status: 'policy_rejected',
+      reason: 'stagnant_action',
+      decision: {
+        action: 'explore',
+        reason: 'Explore attempt 3.'
+      }
+    })
+    assert.equal(executions, 2)
+  })
 })
 
 function createLoop(
@@ -153,7 +746,12 @@ function createLoop(
       food: 20,
       nearbyBlocks: [],
       nearbyEntities: [],
-      inventory: []
+      inventory: [],
+      edibleItemCount: 0,
+      craftableItems: [],
+      nearbyCraftingTable: false,
+      equippedItem: null,
+      placeableBlocks: []
     }),
     execute: async (_bot, decision) => executionFor(decision),
     logger: { log: () => {}, error: () => {} },
@@ -176,6 +774,30 @@ function successfulIdleResult() {
     action: 'idle' as const,
     status: 'completed' as const,
     summary: 'Idle completed.'
+  }
+}
+
+function memoryDouble(overrides: Partial<AgentMemory> = {}): AgentMemory {
+  return {
+    retrieve: async () => ({
+      context: { recentEpisodes: [], relevantFacts: [] }
+    }),
+    record: async () => ({ episodesCreated: 0, semanticFactsCreated: 0 }),
+    flush: async () => {},
+    metrics: () => ({
+      episodesCreated: 0,
+      episodesRetrieved: 0,
+      semanticFactsCreated: 0,
+      semanticFactsRetrieved: 0,
+      retrievalFailures: 0,
+      persistenceFailures: 0,
+      reflectionCalls: 0,
+      reflectionFailures: 0,
+      reflectionInputTokens: 0,
+      reflectionOutputTokens: 0,
+      estimatedMemoryPromptTokens: 0
+    }),
+    ...overrides
   }
 }
 

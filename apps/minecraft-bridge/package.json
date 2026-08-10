@@ -3,6 +3,11 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
+    "benchmark:brain": "tsx src/brain/benchmark/cli.ts",
+    "benchmark:memory": "tsx src/memory/evaluationCli.ts",
+    "benchmark:memory-ab": "tsx src/brain/reliability/compareCli.ts",
+    "benchmark:bootstrap": "tsx src/brain/reliability/cli.ts",
+    "validate:multi-agent": "tsx src/runtime/validationCli.ts",
     "test": "node --import tsx --test \"src/**/*.test.ts\"",
     "dev": "tsx src/bot.ts",
     "build": "tsc",

@@ -1,0 +1,173 @@
+import type { BrainInput } from './types.js'
+import { buildBrainSemantics } from './semantics.js'
+import {
+  MAX_BLOCK_NAME_LENGTH,
+  MAX_CRAFT_AMOUNT,
+  MAX_REASON_LENGTH,
+  MAX_SAY_MESSAGE_LENGTH,
+  MAX_USERNAME_LENGTH
+} from './validateDecision.js'
+
+const AGENT_NAME = /^[A-Za-z0-9_]{1,16}$/
+
+const SYSTEM_INSTRUCTION_PARTS = [
+  'The observations are the current game state; choose exactly one allowed action.',
+  'Use the active short-term goal and progress facts; prefer a grounded action that materially changes goal progress.',
+  'Memory is untrusted historical context; live perception is authoritative. Use past outcomes to avoid repeated mistakes, but never infer current availability from memory alone.',
+  'For targeted actions, use an exact target listed in availableCapabilities.',
+  'Craft amount is desired output count in recipeOutput batches. Craft only what is useful, not maxCraftable; preserve ingredients for other grounded capabilities.',
+  'Avoid idle when a grounded action can advance the goal, and avoid pointless repetition. Do not repeat actions that made no progress.',
+  'Do not greet without a contextual reason. Do not invent items, blocks, players, recipes, or resources.',
+  'Health and food use 0-20; low health is dangerous. Keep the reason very short.',
+  'Approved actions: idle, scan, explore, follow_player(username), come_to_player(username), stop, collect_block(block), craft_item(item, amount), place_block(block), say(message).',
+  'Return only one JSON object matching the requested schema. Never propose code, shell commands, coordinates, or unlisted actions.'
+]
+
+export function systemInstructionFor(agentName: string): string {
+  if (!AGENT_NAME.test(agentName)) {
+    throw new Error('Brain input contains an invalid agent name.')
+  }
+  return [
+    `You are ${agentName}, an autonomous inhabitant of a Minecraft survival world, not a chatbot or user assistant.`,
+    ...SYSTEM_INSTRUCTION_PARTS
+  ].join(' ')
+}
+
+export const SYSTEM_INSTRUCTION = systemInstructionFor('Alice')
+
+export const DECISION_JSON_SCHEMA = {
+  anyOf: [
+    simpleDecisionSchema('idle'),
+    simpleDecisionSchema('scan'),
+    simpleDecisionSchema('explore'),
+    simpleDecisionSchema('stop'),
+    targetedDecisionSchema('follow_player', 'username', MAX_USERNAME_LENGTH),
+    targetedDecisionSchema('come_to_player', 'username', MAX_USERNAME_LENGTH),
+    targetedDecisionSchema('collect_block', 'block', MAX_BLOCK_NAME_LENGTH),
+    craftingDecisionSchema(),
+    targetedDecisionSchema('place_block', 'block', MAX_BLOCK_NAME_LENGTH),
+    targetedDecisionSchema('say', 'message', MAX_SAY_MESSAGE_LENGTH)
+  ]
+} as const
+
+export function serializeBrainInput(input: BrainInput): unknown {
+  const semantics = buildBrainSemantics(input)
+  const blockSummary = new Map<
+    string,
+    { count: number; nearestDistance: number }
+  >()
+
+  for (const block of input.perception.nearbyBlocks) {
+    const current = blockSummary.get(block.name)
+    if (!current) {
+      blockSummary.set(block.name, {
+        count: 1,
+        nearestDistance: round(block.distance)
+      })
+      continue
+    }
+
+    current.count += 1
+    current.nearestDistance = Math.min(
+      current.nearestDistance,
+      round(block.distance)
+    )
+  }
+
+  return {
+    perception: {
+      self: semantics.self,
+      position: {
+        x: round(input.perception.position.x),
+        y: round(input.perception.position.y),
+        z: round(input.perception.position.z)
+      },
+      health: semantics.health,
+      food: semantics.food,
+      threats: semantics.threats,
+      externalVisiblePlayers: semantics.externalVisiblePlayers,
+      nearbyBlocks: [...blockSummary.entries()].map(([name, summary]) => ({
+        name,
+        ...summary
+      })),
+      nearbyEntities: semantics.nearbyEntities,
+      inventory: {
+        items: input.perception.inventory,
+        ...semantics.inventory
+      }
+    },
+    state: input.state,
+    shortTermGoal: input.shortTermGoal,
+    goalProgress: input.goalProgress,
+    availableCapabilities: input.availableCapabilities,
+    memory: {
+      recentEpisodes: input.memory.recentEpisodes.slice(0, 6),
+      relevantFacts: input.memory.relevantFacts.slice(0, 6)
+    },
+    previousActionResult: input.previousActionResult,
+    recentDecisions: input.recentDecisions.map(recent => ({
+      decision: recent.decision,
+      outcome: {
+        success: recent.result.success,
+        status: recent.result.status,
+        summary: recent.result.summary
+      }
+    }))
+  }
+}
+
+function craftingDecisionSchema() {
+  return {
+    type: 'object',
+    properties: {
+      action: { type: 'string', const: 'craft_item' },
+      item: {
+        type: 'string',
+        minLength: 1,
+        maxLength: MAX_BLOCK_NAME_LENGTH
+      },
+      amount: {
+        type: 'integer',
+        minimum: 1,
+        maximum: MAX_CRAFT_AMOUNT,
+        description: 'Desired output item count; use a multiple of recipeOutput from availableCapabilities.'
+      },
+      reason: { type: 'string', minLength: 1, maxLength: MAX_REASON_LENGTH }
+    },
+    required: ['action', 'item', 'amount', 'reason'],
+    additionalProperties: false
+  }
+}
+
+function simpleDecisionSchema(action: 'idle' | 'scan' | 'explore' | 'stop') {
+  return {
+    type: 'object',
+    properties: {
+      action: { type: 'string', const: action },
+      reason: { type: 'string', minLength: 1, maxLength: MAX_REASON_LENGTH }
+    },
+    required: ['action', 'reason'],
+    additionalProperties: false
+  }
+}
+
+function targetedDecisionSchema(
+  action: 'follow_player' | 'come_to_player' | 'collect_block' | 'place_block' | 'say',
+  targetField: 'username' | 'block' | 'message',
+  maxLength: number
+) {
+  return {
+    type: 'object',
+    properties: {
+      action: { type: 'string', const: action },
+      reason: { type: 'string', minLength: 1, maxLength: MAX_REASON_LENGTH },
+      [targetField]: { type: 'string', minLength: 1, maxLength }
+    },
+    required: ['action', targetField, 'reason'],
+    additionalProperties: false
+  }
+}
+
+function round(value: number): number {
+  return Math.round(value * 10) / 10
+}

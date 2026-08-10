@@ -7,12 +7,18 @@ import type {
 } from '../brain/types.js'
 import { perceive } from '../perception/perceive.js'
 import { collectBlock } from './collection.js'
+import { craftItem } from './crafting.js'
+import { exploreArea } from './explore.js'
 import { comeToPlayer, followPlayer, stopMovement } from './movement.js'
+import { placeInventoryBlock } from './placement.js'
 import { say } from './social.js'
 
 export interface DecisionSkillBindings {
   perceive: typeof perceive
   collectBlock: typeof collectBlock
+  craftItem: typeof craftItem
+  placeInventoryBlock: typeof placeInventoryBlock
+  exploreArea: typeof exploreArea
   comeToPlayer: typeof comeToPlayer
   followPlayer: typeof followPlayer
   stopMovement: typeof stopMovement
@@ -25,16 +31,29 @@ export type DecisionExecutor = (
   state: AgentState
 ) => Promise<DecisionExecutionResult>
 
+export interface DecisionExecutorOptions {
+  explorationRadius?: number
+}
+
 const defaultSkills: DecisionSkillBindings = {
   perceive,
   collectBlock,
+  craftItem,
+  placeInventoryBlock,
+  exploreArea,
   comeToPlayer,
   followPlayer,
   stopMovement,
   say
 }
 
-const defaultExecutor = createDecisionExecutor(defaultSkills)
+const defaultExecutor = createDefaultDecisionExecutor()
+
+export function createDefaultDecisionExecutor(
+  options: DecisionExecutorOptions = {}
+): DecisionExecutor {
+  return createDecisionExecutor(defaultSkills, options)
+}
 
 export function executeDecision(
   bot: Bot,
@@ -45,8 +64,11 @@ export function executeDecision(
 }
 
 export function createDecisionExecutor(
-  skills: DecisionSkillBindings
+  skills: DecisionSkillBindings,
+  options: DecisionExecutorOptions = {}
 ): DecisionExecutor {
+  const explorationRadius = options.explorationRadius ?? 24
+
   return async (bot, decision, state) => {
     try {
       switch (decision.action) {
@@ -55,7 +77,7 @@ export function createDecisionExecutor(
             success: true,
             action: 'idle',
             status: 'completed',
-            summary: 'Alice remained idle.'
+            summary: `${state.agentName} remained idle.`
           }
 
         case 'scan': {
@@ -69,6 +91,28 @@ export function createDecisionExecutor(
               nearbyBlocks: snapshot.nearbyBlocks.length,
               nearbyEntities: snapshot.nearbyEntities.length,
               inventoryStacks: snapshot.inventory.length
+            }
+          }
+        }
+
+        case 'explore': {
+          const result = await skills.exploreArea(
+            bot,
+            state,
+            explorationRadius,
+            'autonomous'
+          )
+          return {
+            success: result.success,
+            action: 'explore',
+            status: result.status,
+            summary: result.success
+              ? `Explored ${result.distanceTraveled} blocks.`
+              : 'Could not find a safe exploration route.',
+            details: {
+              distanceTraveled: result.distanceTraveled,
+              ...(result.reason ? { reason: result.reason } : {}),
+              ...(result.error ? { error: result.error } : {})
             }
           }
         }
@@ -125,7 +169,63 @@ export function createDecisionExecutor(
               collected: result.collected,
               blockBroken: result.blockBroken,
               dropDetected: result.dropDetected,
+              ...(result.requiredTool
+                ? { requiredTool: result.requiredTool }
+                : {}),
+              ...(result.tool ? { tool: result.tool } : {}),
               ...(result.reason ? { reason: result.reason } : {})
+            }
+          }
+        }
+
+        case 'craft_item': {
+          const result = await skills.craftItem(
+            bot,
+            state,
+            decision.item,
+            decision.amount,
+            'autonomous'
+          )
+          return {
+            success: result.success,
+            action: 'craft_item',
+            status: result.status,
+            summary: result.success
+              ? `Crafted ${result.crafted} ${decision.item}.`
+              : `Could not craft ${decision.item}.`,
+            details: {
+              requested: result.requested,
+              crafted: result.crafted,
+              ...(result.recipeOutput !== null
+                ? { recipeOutput: result.recipeOutput }
+                : {}),
+              executionCount: result.executionCount,
+              retryCount: result.retryCount,
+              retryResult: result.retryResult,
+              ...(result.reason ? { reason: result.reason } : {}),
+              ...(result.error ? { error: result.error } : {})
+            }
+          }
+        }
+
+        case 'place_block': {
+          const result = await skills.placeInventoryBlock(
+            bot,
+            state,
+            decision.block,
+            'autonomous'
+          )
+          return {
+            success: result.success,
+            action: 'place_block',
+            status: result.status,
+            summary: result.success
+              ? `Placed ${decision.block}.`
+              : `Could not place ${decision.block}.`,
+            details: {
+              placed: result.placed,
+              ...(result.reason ? { reason: result.reason } : {}),
+              ...(result.error ? { error: result.error } : {})
             }
           }
         }

@@ -23,7 +23,12 @@ describe('decision executor', () => {
         food: 20,
         nearbyBlocks: [],
         nearbyEntities: [],
-        inventory: []
+        inventory: [],
+        edibleItemCount: 0,
+        craftableItems: [],
+        nearbyCraftingTable: false,
+        equippedItem: null,
+        placeableBlocks: []
       }),
       followPlayer: (_bot, _state, username, source) => {
         calls.push(`follow:${username}:${source}`)
@@ -63,20 +68,57 @@ describe('decision executor', () => {
           dropDetected: true
         }
       },
+      craftItem: async (_bot, _state, item, amount, source) => {
+        calls.push(`craft:${item}:${amount}:${source}`)
+        return {
+          success: true,
+          action: 'craft_item',
+          target: item,
+          requested: amount,
+          crafted: amount,
+          recipeOutput: 4,
+          executionCount: 1,
+          retryCount: 1,
+          retryResult: 'succeeded',
+          status: 'completed'
+        }
+      },
+      placeInventoryBlock: async (_bot, _state, block, source) => {
+        calls.push(`place:${block}:${source}`)
+        return {
+          success: true,
+          action: 'place_block',
+          target: block,
+          placed: true,
+          status: 'completed'
+        }
+      },
+      exploreArea: async (_bot, _state, radius, source) => {
+        calls.push(`explore:${radius}:${source}`)
+        return {
+          success: true,
+          action: 'explore',
+          status: 'completed',
+          distanceTraveled: 9
+        }
+      },
       say: (_bot, message) => {
         calls.push(`say:${message}`)
         return { success: true, action: 'say', message }
       }
     }
-    const execute = createDecisionExecutor(skills)
+    const execute = createDecisionExecutor(skills, { explorationRadius: 16 })
     const state = createAgentState('Alice')
     const decisions: AgentDecision[] = [
       { action: 'idle', reason: 'Wait.' },
       { action: 'scan', reason: 'Observe.' },
+      { action: 'explore', reason: 'Search nearby.' },
       { action: 'follow_player', username: 'Steve', reason: 'Follow.' },
       { action: 'come_to_player', username: 'Alex', reason: 'Meet.' },
       { action: 'stop', reason: 'Stop.' },
       { action: 'collect_block', block: 'oak_log', reason: 'Collect.' },
+      { action: 'craft_item', item: 'oak_planks', amount: 4, reason: 'Craft.' },
+      { action: 'place_block', block: 'crafting_table', reason: 'Place.' },
       { action: 'say', message: 'Hello!', reason: 'Greet.' }
     ]
 
@@ -88,19 +130,33 @@ describe('decision executor', () => {
     assert.deepEqual(results.map(result => result.action), [
       'idle',
       'scan',
+      'explore',
       'follow_player',
       'come_to_player',
       'stop',
       'collect_block',
+      'craft_item',
+      'place_block',
       'say'
     ])
     assert.deepEqual(calls, [
+      'explore:16:autonomous',
       'follow:Steve:autonomous',
       'come:Alex:autonomous',
       'stop',
       'collect:oak_log:autonomous',
+      'craft:oak_planks:4:autonomous',
+      'place:crafting_table:autonomous',
       'say:Hello!'
     ])
+    assert.deepEqual(results.find(result => result.action === 'craft_item')?.details, {
+      requested: 4,
+      crafted: 4,
+      recipeOutput: 4,
+      executionCount: 1,
+      retryCount: 1,
+      retryResult: 'succeeded'
+    })
   })
 
   it('normalizes skill failures into a structured execution result', async () => {
@@ -142,6 +198,15 @@ function createFailingSkillBindings(): DecisionSkillBindings {
       throw new Error('not used')
     },
     collectBlock: async () => {
+      throw new Error('not used')
+    },
+    craftItem: async () => {
+      throw new Error('not used')
+    },
+    placeInventoryBlock: async () => {
+      throw new Error('not used')
+    },
+    exploreArea: async () => {
       throw new Error('not used')
     },
     say: () => {

@@ -16,7 +16,12 @@ const brainInput: BrainInput = {
       { name: 'oak_log', distance: 4, position: { x: 4, y: 64, z: 2 } }
     ],
     nearbyEntities: [],
-    inventory: []
+    inventory: [],
+    edibleItemCount: 0,
+    craftableItems: [],
+    nearbyCraftingTable: false,
+    equippedItem: null,
+    placeableBlocks: []
   },
   state: {
     agentName: 'Alice',
@@ -26,7 +31,17 @@ const brainInput: BrainInput = {
     actionSource: null,
     busy: false
   },
-  previousActionResult: null
+  previousActionResult: null,
+  recentDecisions: [],
+  shortTermGoal: null,
+  goalProgress: null,
+  availableCapabilities: {
+    observedCollectableBlocks: ['oak_log'],
+    craftableItems: [],
+    placeableBlocks: [],
+    canExplore: true
+  },
+  memory: { recentEpisodes: [], relevantFacts: [] }
 }
 
 describe('OllamaProvider', () => {
@@ -57,7 +72,7 @@ describe('OllamaProvider', () => {
       fetchImpl
     })
 
-    const output = await provider.decide(brainInput)
+    const output = await provider.decide(inputFor('Bob'))
 
     assert.deepEqual(output, { action: 'idle', reason: 'Wait safely.' })
     assert.equal(requestedUrl, 'http://127.0.0.1:11434/api/chat')
@@ -75,6 +90,7 @@ describe('OllamaProvider', () => {
     })
 
     const messages = requestedBody?.messages as Array<{ content: string }>
+    assert.match(messages[0]?.content ?? '', /^You are Bob,/)
     const compactInput = JSON.parse(messages[1].content) as {
       perception: { nearbyBlocks: unknown[] }
     }
@@ -110,6 +126,15 @@ describe('OllamaProvider', () => {
     assert.deepEqual(logs, [
       '🧠 LLM: 1840ms total | 12ms load | prompt 420 tok | output 34 tok | 28 tok/s'
     ])
+    assert.deepEqual(provider.getLastTiming(), {
+      totalDurationMs: 1840,
+      loadDurationMs: 12,
+      promptTokens: 420,
+      promptDurationMs: 300,
+      outputTokens: 34,
+      outputDurationMs: 1214.285714,
+      outputTokensPerSecond: 28
+    })
     assert.doesNotMatch(logs.join('\n'), /private reasoning/)
   })
 
@@ -160,6 +185,7 @@ describe('OllamaProvider', () => {
 
     assert.deepEqual(output, { action: 'scan', reason: 'Look around.' })
     assert.deepEqual(logs, [])
+    assert.equal(provider.getLastTiming(), null)
   })
 
   it('rejects HTTP failures without exposing a raw response body', async () => {
@@ -199,3 +225,11 @@ describe('OllamaProvider', () => {
     )
   })
 })
+
+function inputFor(agentName: string): BrainInput {
+  return {
+    ...brainInput,
+    perception: { ...brainInput.perception, agent: agentName },
+    state: { ...brainInput.state, agentName }
+  }
+}

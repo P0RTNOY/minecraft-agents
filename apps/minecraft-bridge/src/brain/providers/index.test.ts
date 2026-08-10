@@ -2,21 +2,47 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 
 import type { BrainConfig } from '../config.js'
+import { GroqProvider } from './groq.js'
 import { createLLMProvider } from './index.js'
 import { OllamaProvider } from './ollama.js'
+import { OpenAIProvider } from './openai.js'
 
 const config: BrainConfig = {
   autonomous: true,
   tickIntervalMs: 5000,
+  reflexIntervalMs: 250,
+  explorationRadius: 24,
   provider: 'ollama',
   model: 'local-test-model',
   ollamaBaseUrl: 'http://127.0.0.1:11434',
-  debugTiming: false
+  groqBaseUrl: 'https://api.groq.com/openai/v1',
+  groqApiKey: 'test-api-key',
+  openaiBaseUrl: 'https://api.openai.com/v1',
+  openaiApiKey: 'test-openai-key',
+  debugTiming: false,
+  memoryEnabled: true,
+  memoryWorldId: 'local-paper',
+  memoryDirectory: 'data/memory',
+  memoryEpisodeLimit: 4,
+  memoryFactLimit: 4,
+  debugMemory: false,
+  memoryReflection: false,
+  memoryReflectionModel: 'gpt-5-mini'
 }
 
 describe('createLLMProvider', () => {
   it('creates the configured provider behind the neutral interface', () => {
     assert.equal(createLLMProvider(config) instanceof OllamaProvider, true)
+    assert.equal(createLLMProvider({
+      ...config,
+      provider: 'groq',
+      model: 'openai/gpt-oss-20b'
+    }) instanceof GroqProvider, true)
+    assert.equal(createLLMProvider({
+      ...config,
+      provider: 'openai',
+      model: 'gpt-5-mini'
+    }) instanceof OpenAIProvider, true)
   })
 
   it('rejects unsupported provider names explicitly', () => {

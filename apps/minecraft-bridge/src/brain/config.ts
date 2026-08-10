@@ -1,10 +1,24 @@
 export interface BrainConfig {
   autonomous: boolean
   tickIntervalMs: number
+  reflexIntervalMs: number
+  explorationRadius: number
   provider: string
   model: string
   ollamaBaseUrl: string
+  groqBaseUrl: string
+  groqApiKey: string
+  openaiBaseUrl: string
+  openaiApiKey: string
   debugTiming: boolean
+  memoryEnabled: boolean
+  memoryWorldId: string
+  memoryDirectory: string
+  memoryEpisodeLimit: number
+  memoryFactLimit: number
+  debugMemory: boolean
+  memoryReflection: boolean
+  memoryReflectionModel: string
 }
 
 type Environment = Readonly<Record<string, string | undefined>>
@@ -12,6 +26,17 @@ type Environment = Readonly<Record<string, string | undefined>>
 const DEFAULT_TICK_INTERVAL_MS = 5000
 const MIN_TICK_INTERVAL_MS = 1000
 const MAX_TICK_INTERVAL_MS = 300_000
+const DEFAULT_REFLEX_INTERVAL_MS = 250
+const MIN_REFLEX_INTERVAL_MS = 100
+const MAX_REFLEX_INTERVAL_MS = 500
+const DEFAULT_EXPLORATION_RADIUS = 24
+const MIN_EXPLORATION_RADIUS = 8
+const MAX_EXPLORATION_RADIUS = 32
+const DEFAULT_MEMORY_LIMIT = 4
+const MIN_MEMORY_LIMIT = 1
+const MAX_MEMORY_LIMIT = 6
+const MEMORY_IDENTITY = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/
+const MEMORY_MODEL = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/
 
 export function loadBrainConfig(
   environment: Environment = process.env
@@ -22,27 +47,133 @@ export function loadBrainConfig(
     false
   )
   const tickIntervalMs = parseInterval(
-    environment.AGENT_TICK_INTERVAL_MS
+    environment.AGENT_TICK_INTERVAL_MS,
+    'AGENT_TICK_INTERVAL_MS',
+    DEFAULT_TICK_INTERVAL_MS,
+    MIN_TICK_INTERVAL_MS,
+    MAX_TICK_INTERVAL_MS
+  )
+  const reflexIntervalMs = parseInterval(
+    environment.AGENT_REFLEX_INTERVAL_MS,
+    'AGENT_REFLEX_INTERVAL_MS',
+    DEFAULT_REFLEX_INTERVAL_MS,
+    MIN_REFLEX_INTERVAL_MS,
+    MAX_REFLEX_INTERVAL_MS
+  )
+  const explorationRadius = parseInterval(
+    environment.AGENT_EXPLORATION_RADIUS,
+    'AGENT_EXPLORATION_RADIUS',
+    DEFAULT_EXPLORATION_RADIUS,
+    MIN_EXPLORATION_RADIUS,
+    MAX_EXPLORATION_RADIUS
   )
   const debugTiming = parseBoolean(
     environment.LLM_DEBUG_TIMING,
     'LLM_DEBUG_TIMING',
     false
   )
+  const memoryEnabled = parseBoolean(
+    environment.AGENT_MEMORY_ENABLED,
+    'AGENT_MEMORY_ENABLED',
+    true
+  )
+  const memoryWorldId = environment.AGENT_MEMORY_WORLD_ID?.trim() ||
+    'local-paper'
+  const memoryDirectory = environment.AGENT_MEMORY_DIR?.trim() || 'data/memory'
+  const memoryEpisodeLimit = parseInterval(
+    environment.AGENT_MEMORY_EPISODE_LIMIT,
+    'AGENT_MEMORY_EPISODE_LIMIT',
+    DEFAULT_MEMORY_LIMIT,
+    MIN_MEMORY_LIMIT,
+    MAX_MEMORY_LIMIT
+  )
+  const memoryFactLimit = parseInterval(
+    environment.AGENT_MEMORY_FACT_LIMIT,
+    'AGENT_MEMORY_FACT_LIMIT',
+    DEFAULT_MEMORY_LIMIT,
+    MIN_MEMORY_LIMIT,
+    MAX_MEMORY_LIMIT
+  )
+  const debugMemory = parseBoolean(
+    environment.AGENT_DEBUG_MEMORY,
+    'AGENT_DEBUG_MEMORY',
+    false
+  )
+  const memoryReflection = parseBoolean(
+    environment.AGENT_MEMORY_REFLECTION,
+    'AGENT_MEMORY_REFLECTION',
+    false
+  )
+  const memoryReflectionModel = environment.AGENT_MEMORY_REFLECTION_MODEL === undefined
+    ? 'gpt-5-mini'
+    : environment.AGENT_MEMORY_REFLECTION_MODEL.trim()
   const model = environment.LLM_MODEL?.trim() ?? ''
+  const provider = environment.LLM_PROVIDER?.trim().toLowerCase() || 'ollama'
+  const groqApiKey = environment.GROQ_API_KEY?.trim() ?? ''
+  const openaiApiKey = environment.OPENAI_API_KEY?.trim() ?? ''
+
+  if (!MEMORY_IDENTITY.test(memoryWorldId)) {
+    throw new Error('AGENT_MEMORY_WORLD_ID is invalid.')
+  }
+  if (
+    memoryDirectory.length === 0 ||
+    memoryDirectory.length > 512 ||
+    /[\u0000-\u001F\u007F]/.test(memoryDirectory)
+  ) {
+    throw new Error('AGENT_MEMORY_DIR is invalid.')
+  }
+  if (memoryReflection && memoryReflectionModel.length === 0) {
+    throw new Error(
+      'AGENT_MEMORY_REFLECTION_MODEL is required when memory reflection is enabled.'
+    )
+  }
+  if (memoryReflection && !MEMORY_MODEL.test(memoryReflectionModel)) {
+    throw new Error('AGENT_MEMORY_REFLECTION_MODEL is invalid.')
+  }
+  if (memoryReflection && openaiApiKey.length === 0) {
+    throw new Error(
+      'OPENAI_API_KEY is required when memory reflection is enabled.'
+    )
+  }
 
   if (autonomous && model.length === 0) {
     throw new Error('LLM_MODEL is required when AGENT_AUTONOMOUS=true.')
   }
 
+  if (autonomous && provider === 'groq' && groqApiKey.length === 0) {
+    throw new Error('GROQ_API_KEY is required when Groq autonomy is enabled.')
+  }
+
+  if (autonomous && provider === 'openai' && openaiApiKey.length === 0) {
+    throw new Error(
+      'OPENAI_API_KEY is required when OpenAI autonomy is enabled.'
+    )
+  }
+
   return {
     autonomous,
     tickIntervalMs,
-    provider: environment.LLM_PROVIDER?.trim().toLowerCase() || 'ollama',
+    reflexIntervalMs,
+    explorationRadius,
+    provider,
     model,
     ollamaBaseUrl: environment.OLLAMA_BASE_URL?.trim() ||
       'http://127.0.0.1:11434',
-    debugTiming
+    groqBaseUrl: environment.GROQ_BASE_URL?.trim() ||
+      'https://api.groq.com/openai/v1',
+    groqApiKey,
+    openaiBaseUrl: environment.OPENAI_BASE_URL?.trim() ||
+      'https://api.openai.com/v1',
+    openaiApiKey,
+    debugTiming,
+    memoryEnabled,
+    memoryWorldId,
+    memoryDirectory,
+    memoryEpisodeLimit,
+    memoryFactLimit,
+    debugMemory,
+    memoryReflection,
+    memoryReflectionModel
   }
 }
 
@@ -62,27 +193,29 @@ function parseBoolean(
   throw new Error(`${name} must be either true or false.`)
 }
 
-function parseInterval(value: string | undefined): number {
+function parseInterval(
+  value: string | undefined,
+  name: string,
+  defaultValue: number,
+  minimum: number,
+  maximum: number
+): number {
   if (value === undefined || value.trim() === '') {
-    return DEFAULT_TICK_INTERVAL_MS
+    return defaultValue
   }
 
   if (!/^\d+$/.test(value.trim())) {
-    throw new Error('AGENT_TICK_INTERVAL_MS must be an integer.')
+    throw new Error(`${name} must be an integer.`)
   }
 
   const interval = Number(value)
 
-  if (interval < MIN_TICK_INTERVAL_MS) {
-    throw new Error(
-      `AGENT_TICK_INTERVAL_MS must be at least ${MIN_TICK_INTERVAL_MS}.`
-    )
+  if (interval < minimum) {
+    throw new Error(`${name} must be at least ${minimum}.`)
   }
 
-  if (interval > MAX_TICK_INTERVAL_MS) {
-    throw new Error(
-      `AGENT_TICK_INTERVAL_MS must be at most ${MAX_TICK_INTERVAL_MS}.`
-    )
+  if (interval > maximum) {
+    throw new Error(`${name} must be at most ${maximum}.`)
   }
 
   return interval

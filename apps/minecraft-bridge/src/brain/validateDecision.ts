@@ -1,13 +1,24 @@
 import type { AgentDecision } from './types.js'
+import type { CraftableItemSnapshot } from '../skills/crafting.js'
+import type { InventoryItemSnapshot } from '../skills/inventory.js'
 
-export const MAX_REASON_LENGTH = 240
+export const MAX_REASON_LENGTH = 160
 export const MAX_SAY_MESSAGE_LENGTH = 256
 export const MAX_BLOCK_NAME_LENGTH = 64
+export const MAX_CRAFT_AMOUNT = 64
 export const MAX_USERNAME_LENGTH = 16
 
 export interface DecisionValidationIssue {
   path: string
   message: string
+}
+
+export interface DecisionValidationContext {
+  selfUsername: string
+  visibleExternalPlayers: readonly string[]
+  visibleNearbyBlocks: readonly string[]
+  craftableItems?: readonly CraftableItemSnapshot[]
+  placeableBlocks?: readonly InventoryItemSnapshot[]
 }
 
 export type DecisionValidationResult =
@@ -18,7 +29,10 @@ const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f]/
 const BLOCK_NAME = /^[a-z0-9_]+$/
 const USERNAME = /^[A-Za-z0-9_]+$/
 
-export function validateDecision(input: unknown): DecisionValidationResult {
+export function validateDecision(
+  input: unknown,
+  context?: DecisionValidationContext
+): DecisionValidationResult {
   if (!isRecord(input)) {
     return failure('', 'Decision must be a JSON object.')
   }
@@ -41,6 +55,7 @@ export function validateDecision(input: unknown): DecisionValidationResult {
   switch (action) {
     case 'idle':
     case 'scan':
+    case 'explore':
     case 'stop': {
       rejectExtraFields(input, ['action', 'reason'], issues)
       if (!reason || issues.length > 0) return { success: false, issues }
@@ -49,7 +64,7 @@ export function validateDecision(input: unknown): DecisionValidationResult {
 
     case 'follow_player':
     case 'come_to_player': {
-      const username = readBoundedString(
+      let username = readBoundedString(
         input,
         'username',
         MAX_USERNAME_LENGTH,
@@ -62,6 +77,28 @@ export function validateDecision(input: unknown): DecisionValidationResult {
           path: 'username',
           message: 'Username may contain only letters, numbers, and underscores.'
         })
+      }
+
+      if (username && context && USERNAME.test(username)) {
+        const normalizedUsername = username.toLowerCase()
+        if (normalizedUsername === context.selfUsername.toLowerCase()) {
+          issues.push({
+            path: 'username',
+            message: 'Player target must not be the agent itself.'
+          })
+        } else {
+          const visiblePlayer = context.visibleExternalPlayers.find(
+            player => player.toLowerCase() === normalizedUsername
+          )
+          if (!visiblePlayer) {
+            issues.push({
+              path: 'username',
+              message: 'Player target must be a visible external player.'
+            })
+          } else {
+            username = visiblePlayer
+          }
+        }
       }
 
       if (!reason || !username || issues.length > 0) {
@@ -84,6 +121,107 @@ export function validateDecision(input: unknown): DecisionValidationResult {
         issues.push({
           path: 'block',
           message: 'Block must be a lowercase Minecraft registry name.'
+        })
+      }
+
+      if (
+        block &&
+        context &&
+        BLOCK_NAME.test(block) &&
+        !context.visibleNearbyBlocks.includes(block)
+      ) {
+        issues.push({
+          path: 'block',
+          message: 'Block target must be an observed nearby block.'
+        })
+      }
+
+      if (!reason || !block || issues.length > 0) {
+        return { success: false, issues }
+      }
+
+      return { success: true, decision: { action, block, reason } }
+    }
+
+    case 'craft_item': {
+      const item = readBoundedString(
+        input,
+        'item',
+        MAX_BLOCK_NAME_LENGTH,
+        issues
+      )
+      const amount = readBoundedInteger(
+        input,
+        'amount',
+        1,
+        MAX_CRAFT_AMOUNT,
+        issues
+      )
+      rejectExtraFields(input, ['action', 'item', 'amount', 'reason'], issues)
+
+      if (item && !BLOCK_NAME.test(item)) {
+        issues.push({
+          path: 'item',
+          message: 'Item must be a lowercase Minecraft registry name.'
+        })
+      }
+
+      if (item && amount && context && BLOCK_NAME.test(item)) {
+        const capability = context.craftableItems?.find(
+          candidate => candidate.item === item
+        )
+        if (!capability) {
+          issues.push({
+            path: 'item',
+            message: 'Item target must be currently craftable.'
+          })
+        } else if (amount > capability.maxCraftable) {
+          issues.push({
+            path: 'amount',
+            message: 'Amount exceeds the current craftable maximum.'
+          })
+        } else if (amount % capability.recipeOutput !== 0) {
+          issues.push({
+            path: 'amount',
+            message: 'Amount must align to the current recipe output batch.'
+          })
+        }
+      }
+
+      if (!reason || !item || amount === null || issues.length > 0) {
+        return { success: false, issues }
+      }
+
+      return { success: true, decision: { action, item, amount, reason } }
+    }
+
+    case 'place_block': {
+      const block = readBoundedString(
+        input,
+        'block',
+        MAX_BLOCK_NAME_LENGTH,
+        issues
+      )
+      rejectExtraFields(input, ['action', 'block', 'reason'], issues)
+
+      if (block && !BLOCK_NAME.test(block)) {
+        issues.push({
+          path: 'block',
+          message: 'Block must be a lowercase Minecraft registry name.'
+        })
+      }
+
+      if (
+        block &&
+        context &&
+        BLOCK_NAME.test(block) &&
+        !context.placeableBlocks?.some(candidate => (
+          candidate.name === block && candidate.count > 0
+        ))
+      ) {
+        issues.push({
+          path: 'block',
+          message: 'Block target must be currently placeable from inventory.'
         })
       }
 
@@ -163,6 +301,31 @@ function readBoundedString(
   }
 
   return normalized
+}
+
+function readBoundedInteger(
+  input: Record<string, unknown>,
+  field: string,
+  minimum: number,
+  maximum: number,
+  issues: DecisionValidationIssue[]
+): number | null {
+  const value = input[field]
+  if (!Number.isInteger(value)) {
+    issues.push({ path: field, message: `${field} must be an integer.` })
+    return null
+  }
+
+  const integer = value as number
+  if (integer < minimum || integer > maximum) {
+    issues.push({
+      path: field,
+      message: `${field} must be between ${minimum} and ${maximum}.`
+    })
+    return null
+  }
+
+  return integer
 }
 
 function rejectExtraFields(

@@ -16,7 +16,13 @@ interface InventoryReadable {
 }
 
 export function inspectInventory(bot: InventoryReadable): InventorySnapshot {
-  const items = bot.inventory.items().map(item => ({
+  return inspectInventoryItems(bot.inventory.items())
+}
+
+export function inspectInventoryItems(
+  inventoryItems: ReadonlyArray<InventoryItemSnapshot>
+): InventorySnapshot {
+  const items = inventoryItems.map(item => ({
     name: item.name,
     count: item.count
   }))

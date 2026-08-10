@@ -4,7 +4,11 @@ import type {
   EntityObservation,
   PerceptionSnapshot
 } from './types.js'
-import { inspectInventory } from '../skills/inventory.js'
+import { getEntityName } from '../survival/hostility.js'
+import { countSafeFoodItems } from '../skills/eat.js'
+import { inspectInventoryItems } from '../skills/inventory.js'
+import { inspectCraftingCapabilities } from '../skills/crafting.js'
+import { inspectPlaceableBlocks } from '../skills/placement.js'
 
 export function perceive(
   bot: Bot,
@@ -39,21 +43,30 @@ export function perceive(
 
   const nearbyEntities: EntityObservation[] = Object.values(bot.entities)
     .filter(entity => entity !== bot.entity)
-    .map(entity => ({
-      id: entity.id,
-      name: entity.username ?? entity.name ?? entity.type,
-      type: entity.type,
-      distance: bot.entity.position.distanceTo(entity.position),
-      position: {
-        x: entity.position.x,
-        y: entity.position.y,
-        z: entity.position.z
+    .map(entity => {
+      const registryName = getEntityName(entity)
+
+      return {
+        id: entity.id,
+        name: entity.username ?? registryName ?? entity.type,
+        type: entity.type,
+        category: registryName
+          ? bot.registry.entitiesByName[registryName]?.category ?? null
+          : null,
+        distance: bot.entity.position.distanceTo(entity.position),
+        position: {
+          x: entity.position.x,
+          y: entity.position.y,
+          z: entity.position.z
+        }
       }
-    }))
+    })
     .filter(entity => entity.distance <= entityRadius)
     .sort((a, b) => a.distance - b.distance)
 
-  const inventory = inspectInventory(bot).items
+  const inventoryItems = bot.inventory.items()
+  const inventory = inspectInventoryItems(inventoryItems).items
+  const crafting = inspectCraftingCapabilities(bot, 16, inventoryItems)
 
   return {
     agent: bot.username,
@@ -70,6 +83,10 @@ export function perceive(
 
     nearbyBlocks,
     nearbyEntities,
-    inventory
+    inventory,
+    edibleItemCount: countSafeFoodItems(bot, inventory),
+    ...crafting,
+    equippedItem: bot.heldItem?.name ?? null,
+    placeableBlocks: inspectPlaceableBlocks(bot, inventoryItems)
   }
 }

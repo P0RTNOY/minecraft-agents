@@ -46,16 +46,14 @@ export async function comeToPlayer(
   username: string,
   source: AgentActionSource = 'manual'
 ): Promise<MovementResult> {
+  if (username.toLowerCase() === state.agentName.toLowerCase()) {
+    return playerNotVisibleResult('come_to_player', username)
+  }
+
   const player = bot.players[username]?.entity
 
   if (!player) {
-    return {
-      success: false,
-      action: 'come_to_player',
-      status: 'failed',
-      target: username,
-      reason: 'player_not_visible'
-    }
+    return playerNotVisibleResult('come_to_player', username)
   }
 
   prepareMovement(bot)
@@ -117,16 +115,14 @@ export function followPlayer(
   username: string,
   source: AgentActionSource = 'manual'
 ): MovementResult {
+  if (username.toLowerCase() === state.agentName.toLowerCase()) {
+    return playerNotVisibleResult('follow_player', username)
+  }
+
   const player = bot.players[username]?.entity
 
   if (!player) {
-    return {
-      success: false,
-      action: 'follow_player',
-      status: 'failed',
-      target: username,
-      reason: 'player_not_visible'
-    }
+    return playerNotVisibleResult('follow_player', username)
   }
 
   prepareMovement(bot)
@@ -203,6 +199,19 @@ export function stopMovement(
     success: true,
     action: 'stop_movement',
     status: 'stopped'
+  }
+}
+
+function playerNotVisibleResult(
+  action: 'come_to_player' | 'follow_player',
+  username: string
+): MovementResult {
+  return {
+    success: false,
+    action,
+    status: 'failed',
+    target: username,
+    reason: 'player_not_visible'
   }
 }
 
