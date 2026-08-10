@@ -30,6 +30,11 @@ export interface BrainSemantics {
   nearbyEntities: Array<{ name: string; type: string; distance: number }>
 }
 
+export interface VisibleExternalPlayer {
+  username: string
+  distance: number
+}
+
 interface ThreatSummary {
   name: string
   distance: number
@@ -37,7 +42,6 @@ interface ThreatSummary {
 
 export function buildBrainSemantics(input: BrainInput): BrainSemantics {
   const selfUsername = input.state.agentName
-  const normalizedSelf = selfUsername.toLowerCase()
   const hostiles = input.perception.nearbyEntities
     .filter(isObservedHostileEntity)
     .sort((left, right) => (
@@ -62,15 +66,10 @@ export function buildBrainSemantics(input: BrainInput): BrainSemantics {
       equippedItem: input.perception.equippedItem,
       placeableBlocks: input.perception.placeableBlocks
     },
-    externalVisiblePlayers: input.perception.nearbyEntities
-      .filter(entity => (
-        entity.type.toLowerCase() === 'player' &&
-        entity.name.toLowerCase() !== normalizedSelf
-      ))
-      .map(entity => ({
-        username: entity.name,
-        distance: round(entity.distance)
-      })),
+    externalVisiblePlayers: visibleExternalPlayers(
+      input.perception,
+      selfUsername
+    ),
     nearbyEntities: input.perception.nearbyEntities
       .filter(entity => entity.type.toLowerCase() !== 'player')
       .map(entity => ({
@@ -79,6 +78,22 @@ export function buildBrainSemantics(input: BrainInput): BrainSemantics {
         distance: round(entity.distance)
       }))
   }
+}
+
+export function visibleExternalPlayers(
+  perception: BrainInput['perception'],
+  selfUsername: string
+): VisibleExternalPlayer[] {
+  const normalizedSelf = selfUsername.toLowerCase()
+  return perception.nearbyEntities
+    .filter(entity => (
+      entity.type.toLowerCase() === 'player' &&
+      entity.name.toLowerCase() !== normalizedSelf
+    ))
+    .map(entity => ({
+      username: entity.name,
+      distance: round(entity.distance)
+    }))
 }
 
 function threatSummary(

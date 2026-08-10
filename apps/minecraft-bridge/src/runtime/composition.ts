@@ -6,6 +6,7 @@ import { cancelAgentAction } from '../agent/cancelAction.js'
 import { AutonomousAgentLoop } from '../agent/loop.js'
 import { loadBrainConfig, type BrainConfig } from '../brain/config.js'
 import { createLLMProvider } from '../brain/providers/index.js'
+import { visibleExternalPlayers } from '../brain/semantics.js'
 import {
   createOperatorAuthorizer,
   registerChatCommands
@@ -13,6 +14,7 @@ import {
 import { MemoryReflector } from '../memory/reflection.js'
 import { OpenAIReflectionProvider } from '../memory/providers/openaiReflection.js'
 import { createDefaultDecisionExecutor } from '../skills/execute.js'
+import { perceive } from '../perception/perceive.js'
 import { ReflexLoop } from '../survival/reflexLoop.js'
 import { AgentManager } from './agentManager.js'
 import { AgentRuntime } from './agentRuntime.js'
@@ -118,6 +120,10 @@ export async function createProductionComposition(
         logger: context.logger
       }
     ),
+    observeVisibleExternalPlayers: (bot, state) => visibleExternalPlayers(
+      perceive(bot),
+      state.agentName
+    ).map(player => player.username),
     cancelAction: cancelAgentAction,
     createTelemetry: identity => new AgentRuntimeTelemetry(identity),
     scheduler: nodeScheduler,

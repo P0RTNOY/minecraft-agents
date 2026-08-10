@@ -66,6 +66,10 @@ describe('AgentRuntime', () => {
       'timer:set:2000'
     ])
     assert.equal(setup.runtime.snapshot().phase, 'running')
+    assert.deepEqual(
+      setup.runtime.snapshot().visibleExternalPlayers,
+      ['ExternalPlayer']
+    )
     assert.equal(setup.brain.starts, 0)
 
     setup.scheduler.fire(2)
@@ -217,6 +221,7 @@ function harness(
       events.push('commands:register')
       return () => events.push('commands:remove')
     },
+    observeVisibleExternalPlayers: () => ['ExternalPlayer'],
     cancelAction: () => events.push('action:cancel'),
     createTelemetry: () => telemetry,
     scheduler,

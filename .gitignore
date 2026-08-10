@@ -8,6 +8,7 @@
 node_modules/
 dist/
 apps/minecraft-bridge/data/memory/
+apps/minecraft-bridge/data/validation/
 
 # Minecraft server runtime
 minecraft/server/paper.jar

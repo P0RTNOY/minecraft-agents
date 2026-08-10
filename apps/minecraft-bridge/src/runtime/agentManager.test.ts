@@ -150,6 +150,7 @@ function runtimeDouble(
       phase: 'running',
       startedAt: 1,
       stoppedAt: null,
+      visibleExternalPlayers: [],
       state: {
         agentName: definition.username,
         status: 'idle',

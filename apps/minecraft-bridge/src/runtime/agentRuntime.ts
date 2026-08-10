@@ -41,6 +41,7 @@ export interface AgentRuntimeSnapshot {
   phase: AgentRuntimePhase
   startedAt: number | null
   stoppedAt: number | null
+  visibleExternalPlayers: string[]
   state: AgentState
   telemetry: AgentTelemetrySnapshot
 }
@@ -72,6 +73,7 @@ export class AgentRuntime {
   private brainStartTimer: unknown = null
   private removeCommands: (() => void) | null = null
   private cancelSpawnWait: (() => void) | null = null
+  private lastVisibleExternalPlayers: string[] = []
   private readonly removeRuntimeListeners: Array<() => void> = []
 
   constructor(options: AgentRuntimeOptions) {
@@ -112,11 +114,17 @@ export class AgentRuntime {
   }
 
   snapshot(): AgentRuntimeSnapshot {
+    if (this.bot && this.phase !== 'stopped') {
+      this.lastVisibleExternalPlayers = [
+        ...this.services.observeVisibleExternalPlayers(this.bot, this.state)
+      ]
+    }
     return {
       identity: { ...this.identity },
       phase: this.phase,
       startedAt: this.startedAt,
       stoppedAt: this.stoppedAt,
+      visibleExternalPlayers: [...this.lastVisibleExternalPlayers],
       state: { ...this.state },
       telemetry: this.telemetry.snapshot()
     }

@@ -82,6 +82,7 @@ export interface AgentRuntimeServices {
   createBrainLoop(context: BrainLoopContext): RuntimeLoop
   createReflexLoop(context: RuntimeLoopContext): RuntimeLoop
   registerCommands(context: RuntimeCommandContext): () => void
+  observeVisibleExternalPlayers(bot: Bot, state: AgentState): string[]
   cancelAction(bot: Bot, state: AgentState): void
   createTelemetry(identity: RuntimeAgentIdentity): RuntimeTelemetry
   scheduler: RuntimeScheduler
