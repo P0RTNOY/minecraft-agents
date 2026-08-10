@@ -30,11 +30,13 @@ describe('crafting capabilities', () => {
   it('reports table recipes only when a real nearby table is available', () => {
     const withoutTable = createCraftingBot({
       includeTableRecipe: true,
-      plankCount: 3
+      plankCount: 3,
+      stickCount: 2
     })
     const withTable = createCraftingBot({
       includeTableRecipe: true,
       plankCount: 3,
+      stickCount: 2,
       tableAvailable: true
     })
 
@@ -94,7 +96,8 @@ describe('craftItem', () => {
     const insufficient = createCraftingBot({ logCount: 0 })
     const missingTable = createCraftingBot({
       includeTableRecipe: true,
-      plankCount: 3
+      plankCount: 3,
+      stickCount: 2
     })
 
     assert.equal(
@@ -121,12 +124,14 @@ describe('craftItem', () => {
     const missingTable = createCraftingBot({
       includeTableRecipe: true,
       plankCount: 3,
+      stickCount: 2,
       tableAvailable: true,
       removeTableDuringNavigation: true
     })
     const missingIngredients = createCraftingBot({
       includeTableRecipe: true,
       plankCount: 3,
+      stickCount: 2,
       tableAvailable: true,
       removeIngredientsDuringNavigation: true
     })
@@ -177,10 +182,53 @@ describe('craftItem', () => {
     )
   })
 
+  it('rejects a craft whose observed ingredient delta does not match the selected recipe', async () => {
+    const fixture = createCraftingBot({
+      includeTableRecipe: true,
+      plankCount: 6,
+      stickCount: 4,
+      tableAvailable: true,
+      corruptIngredientDelta: true
+    })
+
+    const result = await createTestCraftSkill()(
+      fixture.bot,
+      createAgentState('Alice'),
+      'wooden_pickaxe',
+      1
+    )
+
+    assert.equal(result.success, false)
+    assert.equal(result.reason, 'inventory_changed')
+    assert.equal(result.crafted, 1)
+  })
+
+  it('crafts representative table-required tools from exact grounded recipes', async () => {
+    for (const target of ['wooden_pickaxe', 'wooden_axe']) {
+      const fixture = createCraftingBot({
+        includeTableRecipe: true,
+        plankCount: 3,
+        stickCount: 2,
+        tableAvailable: true
+      })
+
+      const result = await createTestCraftSkill()(
+        fixture.bot,
+        createAgentState('Alice'),
+        target,
+        1
+      )
+
+      assert.equal(result.success, true)
+      assert.equal(result.crafted, 1)
+    }
+  })
+
   it('maps table path replacement and cancellation before crafting safely', async () => {
     const fixture = createCraftingBot({
       includeTableRecipe: true,
       plankCount: 3,
+      stickCount: 2,
       tableAvailable: true
     })
     const navigationCancelled = new Error('Goal was replaced')
@@ -223,12 +271,14 @@ describe('craftItem', () => {
 interface CraftingFixtureOptions {
   logCount?: number
   plankCount?: number
+  stickCount?: number
   includeTableRecipe?: boolean
   tableAvailable?: boolean
   removeTableDuringNavigation?: boolean
   removeIngredientsDuringNavigation?: boolean
   craftError?: boolean
   suppressOutput?: boolean
+  corruptIngredientDelta?: boolean
 }
 
 function createCraftingBot(options: CraftingFixtureOptions = {}): {
@@ -237,13 +287,22 @@ function createCraftingBot(options: CraftingFixtureOptions = {}): {
 } {
   const items = [
     item(1, 'oak_log', options.logCount ?? 0),
-    item(2, 'oak_planks', options.plankCount ?? 0)
+    item(2, 'oak_planks', options.plankCount ?? 0),
+    item(5, 'stick', options.stickCount ?? 0)
   ].filter(stack => stack.count > 0)
   const plankRecipe = recipe(2, 4, [{ id: 1, count: -1 }], false)
-  const pickaxeRecipe = recipe(3, 1, [{ id: 2, count: -3 }], true)
+  const pickaxeRecipe = recipe(3, 1, [
+    { id: 2, count: -3 },
+    { id: 5, count: -2 }
+  ], true)
+  const axeRecipe = recipe(6, 1, [
+    { id: 2, count: -3 },
+    { id: 5, count: -2 }
+  ], true)
   const recipes = new Map<number, Recipe[]>([
     [2, [plankRecipe]],
-    [3, options.includeTableRecipe ? [pickaxeRecipe] : []]
+    [3, options.includeTableRecipe ? [pickaxeRecipe] : []],
+    [6, options.includeTableRecipe ? [axeRecipe] : []]
   ])
   const tablePosition = new Vec3(2, 64, 0)
   let tableAvailable = options.tableAvailable ?? false
@@ -263,7 +322,9 @@ function createCraftingBot(options: CraftingFixtureOptions = {}): {
         oak_log: { id: 1, name: 'oak_log' },
         oak_planks: { id: 2, name: 'oak_planks' },
         wooden_pickaxe: { id: 3, name: 'wooden_pickaxe' },
-        diamond: { id: 4, name: 'diamond' }
+        diamond: { id: 4, name: 'diamond' },
+        stick: { id: 5, name: 'stick' },
+        wooden_axe: { id: 6, name: 'wooden_axe' }
       }
     },
     inventory: {
@@ -306,10 +367,21 @@ function createCraftingBot(options: CraftingFixtureOptions = {}): {
     craft: async (selected: Recipe, applications: number) => {
       const outputName = selected.result.id === 2
         ? 'oak_planks'
-        : 'wooden_pickaxe'
+        : selected.result.id === 3
+          ? 'wooden_pickaxe'
+          : 'wooden_axe'
       craftCalls.push({ item: outputName, count: applications })
       if (options.craftError) throw new Error('Crafting window closed')
       if (!options.suppressOutput) {
+        for (const delta of selected.delta.filter(entry => entry.count < 0)) {
+          const ingredient = items.find(stack => stack.type === delta.id)
+          if (ingredient) {
+            ingredient.count += delta.count * applications
+            if (options.corruptIngredientDelta && delta.id === 2) {
+              ingredient.count += delta.count * applications
+            }
+          }
+        }
         const existing = items.find(stack => stack.type === selected.result.id)
         if (existing) {
           existing.count += selected.result.count * applications

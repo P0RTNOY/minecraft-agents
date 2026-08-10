@@ -33,6 +33,7 @@ export type CraftFailureReason =
   | 'navigation_failed'
   | 'action_cancelled'
   | 'craft_failed'
+  | 'inventory_changed'
   | 'output_not_confirmed'
 
 export interface CraftResult {
@@ -49,6 +50,12 @@ export interface CraftResult {
 export interface CraftNavigator {
   prepare(bot: Bot): void
   goto(bot: Bot, table: Block): Promise<void>
+}
+
+interface InventoryCountItem {
+  type: number
+  metadata: number
+  count: number
 }
 
 export type CraftSkill = (
@@ -182,7 +189,6 @@ async function craftItemWith(
     )
   }
 
-  const initialCount = countInventoryItem(bot, registryItem.id, null)
   const actionVersion = beginAgentAction(
     state,
     'crafting',
@@ -228,6 +234,12 @@ async function craftItemWith(
     }
 
     const applications = Math.ceil(amount / recipe.result.count)
+    const inventoryBeforeCraft = snapshotInventoryCounts(bot.inventory.items())
+    const initialCount = countItemStacks(
+      inventoryBeforeCraft,
+      registryItem.id,
+      null
+    )
     try {
       await bot.craft(
         recipe,
@@ -241,9 +253,10 @@ async function craftItemWith(
     }
 
     await bot.waitForTicks(1)
+    const inventoryAfterCraft = snapshotInventoryCounts(bot.inventory.items())
     const crafted = Math.max(
       0,
-      countInventoryItem(bot, registryItem.id, null) - initialCount
+      countItemStacks(inventoryAfterCraft, registryItem.id, null) - initialCount
     )
 
     if (state.actionVersion !== actionVersion) {
@@ -255,6 +268,15 @@ async function craftItemWith(
 
     if (crafted < amount) {
       return failedResult(itemName, amount, 'output_not_confirmed', { crafted })
+    }
+
+    if (!matchesRecipeDelta(
+      inventoryBeforeCraft,
+      inventoryAfterCraft,
+      recipe,
+      applications
+    )) {
+      return failedResult(itemName, amount, 'inventory_changed', { crafted })
     }
 
     return {
@@ -307,16 +329,8 @@ function maximumCraftableOutput(
   return applications * recipe.result.count
 }
 
-function countInventoryItem(
-  bot: Bot,
-  itemType: number,
-  metadata: number | null
-): number {
-  return countItemStacks(bot.inventory.items(), itemType, metadata)
-}
-
 function countItemStacks(
-  inventoryItems: readonly Item[],
+  inventoryItems: readonly InventoryCountItem[],
   itemType: number,
   metadata: number | null
 ): number {
@@ -326,6 +340,30 @@ function countItemStacks(
       (metadata === null || item.metadata === metadata)
     ))
     .reduce((total, item) => total + item.count, 0)
+}
+
+function snapshotInventoryCounts(
+  inventoryItems: readonly Item[]
+): InventoryCountItem[] {
+  return inventoryItems.map(item => ({
+    type: item.type,
+    metadata: item.metadata,
+    count: item.count
+  }))
+}
+
+function matchesRecipeDelta(
+  before: readonly InventoryCountItem[],
+  after: readonly InventoryCountItem[],
+  recipe: Recipe,
+  applications: number
+): boolean {
+  return recipe.delta.every(delta => {
+    const actualDelta = countItemStacks(after, delta.id, delta.metadata) -
+      countItemStacks(before, delta.id, delta.metadata)
+
+    return actualDelta === delta.count * applications
+  })
 }
 
 function navigationFailure(
