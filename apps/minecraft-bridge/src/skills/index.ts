@@ -1,5 +1,6 @@
 export * from './collection.js'
 export * from './execute.js'
+export * from './flee.js'
 export * from './inventory.js'
 export * from './movement.js'
 export * from './social.js'
