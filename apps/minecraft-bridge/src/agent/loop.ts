@@ -100,6 +100,7 @@ export class AutonomousAgentLoop {
   private running = false
   private cycleInProgress = false
   private timer: NodeJS.Timeout | null = null
+  private readonly idleWaiters = new Set<() => void>()
   private previousActionResult: DecisionExecutionResult | null = null
   private recentDecisions: readonly RecentDecision[] = []
 
@@ -135,6 +136,13 @@ export class AutonomousAgentLoop {
       clearTimeout(this.timer)
       this.timer = null
     }
+  }
+
+  waitForIdle(): Promise<void> {
+    if (!this.cycleInProgress) return Promise.resolve()
+    return new Promise(resolve => {
+      this.idleWaiters.add(resolve)
+    })
   }
 
   async runCycle(): Promise<BrainCycleResult> {
@@ -297,6 +305,7 @@ export class AutonomousAgentLoop {
       return { status: 'executed', decision, result }
     } finally {
       this.cycleInProgress = false
+      this.resolveIdleWaiters()
     }
   }
 
@@ -348,6 +357,11 @@ export class AutonomousAgentLoop {
       void this.runAndSchedule()
     }, this.intervalMs)
     this.timer.unref()
+  }
+
+  private resolveIdleWaiters(): void {
+    for (const resolve of this.idleWaiters) resolve()
+    this.idleWaiters.clear()
   }
 }
 

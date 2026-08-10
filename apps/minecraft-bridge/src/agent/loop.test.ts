@@ -486,6 +486,27 @@ describe('AutonomousAgentLoop', () => {
     assert.equal(executions, 1)
   })
 
+  it('waits for an in-flight cycle to become idle after stop', async () => {
+    const decision = deferred<unknown>()
+    const loop = createLoop({
+      provider: { decide: async () => decision.promise }
+    })
+    const cycle = loop.runCycle()
+    await Promise.resolve()
+
+    loop.stop()
+    const idle = loop.waitForIdle()
+    let idleResolved = false
+    void idle.then(() => { idleResolved = true })
+    await Promise.resolve()
+    assert.equal(idleResolved, false)
+
+    decision.resolve({ action: 'idle', reason: 'Wait.' })
+    await cycle
+    await idle
+    assert.equal(idleResolved, true)
+  })
+
   it('handles provider failure and allows a future cycle to retry', async () => {
     let attempts = 0
     const provider: LLMProvider = {

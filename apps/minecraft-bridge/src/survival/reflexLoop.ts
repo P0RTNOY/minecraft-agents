@@ -62,6 +62,7 @@ export class ReflexLoop {
   private running = false
   private cycleInProgress = false
   private timer: NodeJS.Timeout | null = null
+  private readonly idleWaiters = new Set<() => void>()
 
   constructor(options: ReflexLoopOptions) {
     if (!Number.isInteger(options.intervalMs) || options.intervalMs < 100) {
@@ -95,6 +96,13 @@ export class ReflexLoop {
       clearTimeout(this.timer)
       this.timer = null
     }
+  }
+
+  waitForIdle(): Promise<void> {
+    if (!this.cycleInProgress) return Promise.resolve()
+    return new Promise(resolve => {
+      this.idleWaiters.add(resolve)
+    })
   }
 
   async runCycle(): Promise<ReflexCycleResult> {
@@ -162,6 +170,7 @@ export class ReflexLoop {
       }
     } finally {
       this.cycleInProgress = false
+      this.resolveIdleWaiters()
     }
   }
 
@@ -175,6 +184,11 @@ export class ReflexLoop {
       void this.runAndSchedule()
     }, this.intervalMs)
     this.timer.unref()
+  }
+
+  private resolveIdleWaiters(): void {
+    for (const resolve of this.idleWaiters) resolve()
+    this.idleWaiters.clear()
   }
 }
 

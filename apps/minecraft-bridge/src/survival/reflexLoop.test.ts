@@ -110,6 +110,28 @@ describe('ReflexLoop', () => {
     assert.equal(executions, 1)
   })
 
+  it('waits for an in-flight reflex cycle to become idle after stop', async () => {
+    const execution = deferred<ReturnType<typeof completedEatResult>>()
+    const loop = createLoop({
+      observe: () => snapshot({ food: 4, edibleItemCount: 1 }),
+      execute: async () => execution.promise
+    })
+    const cycle = loop.runCycle()
+    await Promise.resolve()
+
+    loop.stop()
+    const idle = loop.waitForIdle()
+    let idleResolved = false
+    void idle.then(() => { idleResolved = true })
+    await Promise.resolve()
+    assert.equal(idleResolved, false)
+
+    execution.resolve(completedEatResult())
+    await cycle
+    await idle
+    assert.equal(idleResolved, true)
+  })
+
   it('reports observation failures and allows the next tick to recover', async () => {
     let observations = 0
     const loop = createLoop({
