@@ -4,6 +4,7 @@ export type AgentStatus =
   | 'following'
   | 'collecting'
   | 'exploring'
+  | 'crafting'
   | 'fleeing'
   | 'eating'
 
@@ -13,6 +14,7 @@ export type AgentAction =
   | 'follow_nearest_player'
   | 'collect_block'
   | 'explore'
+  | 'craft_item'
   | 'flee_from_entity'
   | 'eat'
 

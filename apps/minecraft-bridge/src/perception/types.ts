@@ -1,4 +1,5 @@
 import type { InventoryItemSnapshot } from '../skills/inventory.js'
+import type { CraftableItemSnapshot } from '../skills/crafting.js'
 
 export interface PositionSnapshot {
   x: number
@@ -33,4 +34,7 @@ export interface PerceptionSnapshot {
   nearbyEntities: EntityObservation[]
   inventory: InventoryItemSnapshot[]
   edibleItemCount: number
+  craftableItems: CraftableItemSnapshot[]
+  nearbyCraftingTable: boolean
+  equippedItem: string | null
 }

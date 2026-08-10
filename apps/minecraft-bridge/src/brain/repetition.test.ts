@@ -24,7 +24,10 @@ const baseInput: BrainInput = {
     nearbyBlocks: [],
     nearbyEntities: [],
     inventory: [],
-    edibleItemCount: 0
+    edibleItemCount: 0,
+    craftableItems: [],
+    nearbyCraftingTable: false,
+    equippedItem: null
   },
   state: {
     agentName: 'Alice',

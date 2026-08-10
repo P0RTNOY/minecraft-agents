@@ -1,8 +1,10 @@
 import type { AgentDecision } from './types.js'
+import type { CraftableItemSnapshot } from '../skills/crafting.js'
 
 export const MAX_REASON_LENGTH = 160
 export const MAX_SAY_MESSAGE_LENGTH = 256
 export const MAX_BLOCK_NAME_LENGTH = 64
+export const MAX_CRAFT_AMOUNT = 64
 export const MAX_USERNAME_LENGTH = 16
 
 export interface DecisionValidationIssue {
@@ -14,6 +16,7 @@ export interface DecisionValidationContext {
   selfUsername: string
   visibleExternalPlayers: readonly string[]
   visibleNearbyBlocks: readonly string[]
+  craftableItems?: readonly CraftableItemSnapshot[]
 }
 
 export type DecisionValidationResult =
@@ -138,6 +141,53 @@ export function validateDecision(
       return { success: true, decision: { action, block, reason } }
     }
 
+    case 'craft_item': {
+      const item = readBoundedString(
+        input,
+        'item',
+        MAX_BLOCK_NAME_LENGTH,
+        issues
+      )
+      const amount = readBoundedInteger(
+        input,
+        'amount',
+        1,
+        MAX_CRAFT_AMOUNT,
+        issues
+      )
+      rejectExtraFields(input, ['action', 'item', 'amount', 'reason'], issues)
+
+      if (item && !BLOCK_NAME.test(item)) {
+        issues.push({
+          path: 'item',
+          message: 'Item must be a lowercase Minecraft registry name.'
+        })
+      }
+
+      if (item && amount && context && BLOCK_NAME.test(item)) {
+        const capability = context.craftableItems?.find(
+          candidate => candidate.item === item
+        )
+        if (!capability) {
+          issues.push({
+            path: 'item',
+            message: 'Item target must be currently craftable.'
+          })
+        } else if (amount > capability.maxCraftable) {
+          issues.push({
+            path: 'amount',
+            message: 'Amount exceeds the current craftable maximum.'
+          })
+        }
+      }
+
+      if (!reason || !item || amount === null || issues.length > 0) {
+        return { success: false, issues }
+      }
+
+      return { success: true, decision: { action, item, amount, reason } }
+    }
+
     case 'say': {
       const message = readBoundedString(
         input,
@@ -207,6 +257,31 @@ function readBoundedString(
   }
 
   return normalized
+}
+
+function readBoundedInteger(
+  input: Record<string, unknown>,
+  field: string,
+  minimum: number,
+  maximum: number,
+  issues: DecisionValidationIssue[]
+): number | null {
+  const value = input[field]
+  if (!Number.isInteger(value)) {
+    issues.push({ path: field, message: `${field} must be an integer.` })
+    return null
+  }
+
+  const integer = value as number
+  if (integer < minimum || integer > maximum) {
+    issues.push({
+      path: field,
+      message: `${field} must be between ${minimum} and ${maximum}.`
+    })
+    return null
+  }
+
+  return integer
 }
 
 function rejectExtraFields(

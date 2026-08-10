@@ -64,7 +64,14 @@ const input: BrainInput = {
       }
     ],
     inventory: [{ name: 'apple', count: 2 }],
-    edibleItemCount: 2
+    edibleItemCount: 2,
+    craftableItems: [{
+      item: 'oak_planks',
+      maxCraftable: 8,
+      requiresTable: false
+    }],
+    nearbyCraftingTable: false,
+    equippedItem: null
   },
   state: {
     agentName: 'Alice',
@@ -88,7 +95,17 @@ describe('buildBrainSemantics', () => {
         nearestHostile: { name: 'zombie', distance: 6.3 },
         nearestCreeper: null
       },
-      inventory: { edibleItemCount: 2, hasFood: true },
+      inventory: {
+        edibleItemCount: 2,
+        hasFood: true,
+        craftableItems: [{
+          item: 'oak_planks',
+          maxCraftable: 8,
+          requiresTable: false
+        }],
+        nearbyCraftingTable: false,
+        equippedItem: null
+      },
       externalVisiblePlayers: [{ username: 'Steve', distance: 4.2 }],
       nearbyEntities: [{ name: 'zombie', type: 'mob', distance: 6.3 }]
     })
@@ -133,7 +150,14 @@ describe('buildBrainSemantics', () => {
     assert.deepEqual(serialized.perception.inventory, {
       items: [{ name: 'apple', count: 2 }],
       edibleItemCount: 2,
-      hasFood: true
+      hasFood: true,
+      craftableItems: [{
+        item: 'oak_planks',
+        maxCraftable: 8,
+        requiresTable: false
+      }],
+      nearbyCraftingTable: false,
+      equippedItem: null
     })
     assert.deepEqual(serialized.perception.self, { username: 'Alice' })
   })
@@ -144,7 +168,12 @@ describe('buildDecisionContext', () => {
     assert.deepEqual(buildDecisionContext(input), {
       selfUsername: 'Alice',
       visibleExternalPlayers: ['Steve'],
-      visibleNearbyBlocks: ['grass_block', 'dirt', 'bamboo']
+      visibleNearbyBlocks: ['grass_block', 'dirt', 'bamboo'],
+      craftableItems: [{
+        item: 'oak_planks',
+        maxCraftable: 8,
+        requiresTable: false
+      }]
     })
   })
 })

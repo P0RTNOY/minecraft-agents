@@ -66,7 +66,10 @@ describe('AutonomousAgentLoop', () => {
           position: { x: 4, y: 64, z: 0 }
         }],
         inventory: [],
-        edibleItemCount: 0
+        edibleItemCount: 0,
+        craftableItems: [],
+        nearbyCraftingTable: false,
+        equippedItem: null
       }),
       execute: async (_bot, decision) => {
         executions += 1
@@ -107,11 +110,37 @@ describe('AutonomousAgentLoop', () => {
         }],
         nearbyEntities: [],
         inventory: [],
-        edibleItemCount: 0
+        edibleItemCount: 0,
+        craftableItems: [],
+        nearbyCraftingTable: false,
+        equippedItem: null
       }),
       execute: async (_bot, decision) => {
         executions += 1
         return executionFor(decision)
+      }
+    })
+
+    const result = await loop.runCycle()
+
+    assert.equal(result.status, 'validation_failed')
+    assert.equal(executions, 0)
+  })
+
+  it('does not execute an item outside the current craftability context', async () => {
+    let executions = 0
+    const loop = createLoop({
+      provider: {
+        decide: async () => ({
+          action: 'craft_item',
+          item: 'diamond_pickaxe',
+          amount: 1,
+          reason: 'Upgrade tools.'
+        })
+      },
+      execute: async () => {
+        executions += 1
+        return successfulIdleResult()
       }
     })
 
@@ -341,7 +370,10 @@ function createLoop(
       nearbyBlocks: [],
       nearbyEntities: [],
       inventory: [],
-      edibleItemCount: 0
+      edibleItemCount: 0,
+      craftableItems: [],
+      nearbyCraftingTable: false,
+      equippedItem: null
     }),
     execute: async (_bot, decision) => executionFor(decision),
     logger: { log: () => {}, error: () => {} },

@@ -48,6 +48,24 @@ describe('cancelAgentAction', () => {
     assert.deepEqual(calls, ['setGoal:null'])
     assert.equal(state.busy, false)
   })
+
+  it('stops crafting-table navigation before clearing crafting state', () => {
+    const calls: string[] = []
+    const bot = createBot(calls)
+    const state = createAgentState('Alice')
+    beginAgentAction(
+      state,
+      'crafting',
+      'craft_item',
+      'Craft wooden_pickaxe',
+      'autonomous'
+    )
+
+    cancelAgentAction(bot, state)
+
+    assert.deepEqual(calls, ['setGoal:null'])
+    assert.equal(state.busy, false)
+  })
 })
 
 function createBot(calls: string[]): Bot {

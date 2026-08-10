@@ -135,6 +135,9 @@ function snapshot(
     nearbyEntities: [],
     inventory: [],
     edibleItemCount: 0,
+    craftableItems: [],
+    nearbyCraftingTable: false,
+    equippedItem: null,
     ...overrides
   }
 }

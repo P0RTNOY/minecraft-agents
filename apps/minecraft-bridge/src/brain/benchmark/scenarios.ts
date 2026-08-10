@@ -71,7 +71,10 @@ function scenario(
         nearbyBlocks: overrides.nearbyBlocks ?? [],
         nearbyEntities: overrides.nearbyEntities ?? [],
         inventory: overrides.inventory ?? [],
-        edibleItemCount: overrides.edibleItemCount ?? 0
+        edibleItemCount: overrides.edibleItemCount ?? 0,
+        craftableItems: [],
+        nearbyCraftingTable: false,
+        equippedItem: null
       },
       state: {
         agentName: 'Alice',

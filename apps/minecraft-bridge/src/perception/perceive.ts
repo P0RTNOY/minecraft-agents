@@ -6,7 +6,8 @@ import type {
 } from './types.js'
 import { getEntityName } from '../survival/hostility.js'
 import { countSafeFoodItems } from '../skills/eat.js'
-import { inspectInventory } from '../skills/inventory.js'
+import { inspectInventoryItems } from '../skills/inventory.js'
+import { inspectCraftingCapabilities } from '../skills/crafting.js'
 
 export function perceive(
   bot: Bot,
@@ -62,7 +63,9 @@ export function perceive(
     .filter(entity => entity.distance <= entityRadius)
     .sort((a, b) => a.distance - b.distance)
 
-  const inventory = inspectInventory(bot).items
+  const inventoryItems = bot.inventory.items()
+  const inventory = inspectInventoryItems(inventoryItems).items
+  const crafting = inspectCraftingCapabilities(bot, 16, inventoryItems)
 
   return {
     agent: bot.username,
@@ -80,6 +83,8 @@ export function perceive(
     nearbyBlocks,
     nearbyEntities,
     inventory,
-    edibleItemCount: countSafeFoodItems(bot, inventory)
+    edibleItemCount: countSafeFoodItems(bot, inventory),
+    ...crafting,
+    equippedItem: bot.heldItem?.name ?? null
   }
 }

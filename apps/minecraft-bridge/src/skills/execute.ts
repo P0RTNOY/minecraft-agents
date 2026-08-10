@@ -7,6 +7,7 @@ import type {
 } from '../brain/types.js'
 import { perceive } from '../perception/perceive.js'
 import { collectBlock } from './collection.js'
+import { craftItem } from './crafting.js'
 import { exploreArea } from './explore.js'
 import { comeToPlayer, followPlayer, stopMovement } from './movement.js'
 import { say } from './social.js'
@@ -14,6 +15,7 @@ import { say } from './social.js'
 export interface DecisionSkillBindings {
   perceive: typeof perceive
   collectBlock: typeof collectBlock
+  craftItem: typeof craftItem
   exploreArea: typeof exploreArea
   comeToPlayer: typeof comeToPlayer
   followPlayer: typeof followPlayer
@@ -34,6 +36,7 @@ export interface DecisionExecutorOptions {
 const defaultSkills: DecisionSkillBindings = {
   perceive,
   collectBlock,
+  craftItem,
   exploreArea,
   comeToPlayer,
   followPlayer,
@@ -164,6 +167,30 @@ export function createDecisionExecutor(
               blockBroken: result.blockBroken,
               dropDetected: result.dropDetected,
               ...(result.reason ? { reason: result.reason } : {})
+            }
+          }
+        }
+
+        case 'craft_item': {
+          const result = await skills.craftItem(
+            bot,
+            state,
+            decision.item,
+            decision.amount,
+            'autonomous'
+          )
+          return {
+            success: result.success,
+            action: 'craft_item',
+            status: result.status,
+            summary: result.success
+              ? `Crafted ${result.crafted} ${decision.item}.`
+              : `Could not craft ${decision.item}.`,
+            details: {
+              requested: result.requested,
+              crafted: result.crafted,
+              ...(result.reason ? { reason: result.reason } : {}),
+              ...(result.error ? { error: result.error } : {})
             }
           }
         }

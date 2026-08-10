@@ -24,7 +24,10 @@ describe('decision executor', () => {
         nearbyBlocks: [],
         nearbyEntities: [],
         inventory: [],
-        edibleItemCount: 0
+        edibleItemCount: 0,
+        craftableItems: [],
+        nearbyCraftingTable: false,
+        equippedItem: null
       }),
       followPlayer: (_bot, _state, username, source) => {
         calls.push(`follow:${username}:${source}`)
@@ -64,6 +67,17 @@ describe('decision executor', () => {
           dropDetected: true
         }
       },
+      craftItem: async (_bot, _state, item, amount, source) => {
+        calls.push(`craft:${item}:${amount}:${source}`)
+        return {
+          success: true,
+          action: 'craft_item',
+          target: item,
+          requested: amount,
+          crafted: amount,
+          status: 'completed'
+        }
+      },
       exploreArea: async (_bot, _state, radius, source) => {
         calls.push(`explore:${radius}:${source}`)
         return {
@@ -88,6 +102,7 @@ describe('decision executor', () => {
       { action: 'come_to_player', username: 'Alex', reason: 'Meet.' },
       { action: 'stop', reason: 'Stop.' },
       { action: 'collect_block', block: 'oak_log', reason: 'Collect.' },
+      { action: 'craft_item', item: 'oak_planks', amount: 4, reason: 'Craft.' },
       { action: 'say', message: 'Hello!', reason: 'Greet.' }
     ]
 
@@ -104,6 +119,7 @@ describe('decision executor', () => {
       'come_to_player',
       'stop',
       'collect_block',
+      'craft_item',
       'say'
     ])
     assert.deepEqual(calls, [
@@ -112,6 +128,7 @@ describe('decision executor', () => {
       'come:Alex:autonomous',
       'stop',
       'collect:oak_log:autonomous',
+      'craft:oak_planks:4:autonomous',
       'say:Hello!'
     ])
   })
@@ -155,6 +172,9 @@ function createFailingSkillBindings(): DecisionSkillBindings {
       throw new Error('not used')
     },
     collectBlock: async () => {
+      throw new Error('not used')
+    },
+    craftItem: async () => {
       throw new Error('not used')
     },
     exploreArea: async () => {

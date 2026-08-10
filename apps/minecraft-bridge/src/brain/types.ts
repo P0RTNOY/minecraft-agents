@@ -17,6 +17,7 @@ export type AgentDecision =
   | (DecisionBase & { action: 'come_to_player'; username: string })
   | (DecisionBase & { action: 'stop' })
   | (DecisionBase & { action: 'collect_block'; block: string })
+  | (DecisionBase & { action: 'craft_item'; item: string; amount: number })
   | (DecisionBase & { action: 'say'; message: string })
 
 export type AgentDecisionAction = AgentDecision['action']

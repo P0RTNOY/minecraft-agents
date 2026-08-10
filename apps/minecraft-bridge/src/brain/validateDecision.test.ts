@@ -31,6 +31,9 @@ describe('validateDecision', () => {
       [{ action: 'collect_block', block: 'oak_log', reason: 'Gather wood.' }, {
         action: 'collect_block', block: 'oak_log', reason: 'Gather wood.'
       }],
+      [{ action: 'craft_item', item: 'oak_planks', amount: 4, reason: 'Make planks.' }, {
+        action: 'craft_item', item: 'oak_planks', amount: 4, reason: 'Make planks.'
+      }],
       [{ action: 'say', message: 'Hello, Steve!', reason: 'Be friendly.' }, {
         action: 'say', message: 'Hello, Steve!', reason: 'Be friendly.'
       }]
@@ -225,5 +228,48 @@ describe('validateDecision', () => {
     })
 
     assert.equal(malformed.success, false)
+  })
+
+  it('accepts only exact currently craftable items within the reported maximum', () => {
+    const context = {
+      selfUsername: 'Alice',
+      visibleExternalPlayers: [],
+      visibleNearbyBlocks: [],
+      craftableItems: [{
+        item: 'oak_planks',
+        maxCraftable: 8,
+        requiresTable: false
+      }]
+    }
+
+    assert.equal(validateDecision({
+      action: 'craft_item',
+      item: 'oak_planks',
+      amount: 4,
+      reason: 'Need planks.'
+    }, context).success, true)
+    assert.equal(validateDecision({
+      action: 'craft_item',
+      item: 'diamond_pickaxe',
+      amount: 1,
+      reason: 'Upgrade.'
+    }, context).success, false)
+    assert.equal(validateDecision({
+      action: 'craft_item',
+      item: 'oak_planks',
+      amount: 9,
+      reason: 'Need many planks.'
+    }, context).success, false)
+  })
+
+  it('rejects malformed crafting item names and invalid amounts', () => {
+    for (const decision of [
+      { action: 'craft_item', item: 'Oak Planks', amount: 4, reason: 'Craft.' },
+      { action: 'craft_item', item: 'oak_planks', amount: 0, reason: 'Craft.' },
+      { action: 'craft_item', item: 'oak_planks', amount: 1.5, reason: 'Craft.' },
+      { action: 'craft_item', item: 'oak_planks', amount: 65, reason: 'Craft.' }
+    ]) {
+      assert.equal(validateDecision(decision).success, false)
+    }
   })
 })

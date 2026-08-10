@@ -2,6 +2,7 @@ import type { BrainInput } from './types.js'
 import { buildBrainSemantics } from './semantics.js'
 import {
   MAX_BLOCK_NAME_LENGTH,
+  MAX_CRAFT_AMOUNT,
   MAX_REASON_LENGTH,
   MAX_SAY_MESSAGE_LENGTH,
   MAX_USERNAME_LENGTH
@@ -13,7 +14,7 @@ export const SYSTEM_INSTRUCTION = [
   'Prioritize useful survival progress and avoid pointless repetition.',
   'Do not greet without a contextual reason, and do not invent players or resources.',
   'Health and food use 0-20; low health is dangerous. Keep the reason very short.',
-  'Approved actions: idle, scan, explore, follow_player(username), come_to_player(username), stop, collect_block(block), say(message).',
+  'Approved actions: idle, scan, explore, follow_player(username), come_to_player(username), stop, collect_block(block), craft_item(item, amount), say(message).',
   'Return only one JSON object matching the requested schema. Never propose code, shell commands, coordinates, or unlisted actions.'
 ].join(' ')
 
@@ -26,6 +27,7 @@ export const DECISION_JSON_SCHEMA = {
     targetedDecisionSchema('follow_player', 'username', MAX_USERNAME_LENGTH),
     targetedDecisionSchema('come_to_player', 'username', MAX_USERNAME_LENGTH),
     targetedDecisionSchema('collect_block', 'block', MAX_BLOCK_NAME_LENGTH),
+    craftingDecisionSchema(),
     targetedDecisionSchema('say', 'message', MAX_SAY_MESSAGE_LENGTH)
   ]
 } as const
@@ -86,6 +88,24 @@ export function serializeBrainInput(input: BrainInput): unknown {
         summary: recent.result.summary
       }
     }))
+  }
+}
+
+function craftingDecisionSchema() {
+  return {
+    type: 'object',
+    properties: {
+      action: { const: 'craft_item' },
+      item: {
+        type: 'string',
+        minLength: 1,
+        maxLength: MAX_BLOCK_NAME_LENGTH
+      },
+      amount: { type: 'integer', minimum: 1, maximum: MAX_CRAFT_AMOUNT },
+      reason: { type: 'string', minLength: 1, maxLength: MAX_REASON_LENGTH }
+    },
+    required: ['action', 'item', 'amount', 'reason'],
+    additionalProperties: false
   }
 }
 

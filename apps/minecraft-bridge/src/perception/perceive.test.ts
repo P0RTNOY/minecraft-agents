@@ -18,15 +18,28 @@ describe('perceive', () => {
       entities: { 1: self, 7: creeper },
       health: 20,
       food: 6,
+      heldItem: null,
       findBlocks: () => [],
+      findBlock: () => null,
       blockAt: () => null,
+      recipesFor: (itemType: number) => itemType === 20
+        ? [{
+            result: { id: 20, count: 4, metadata: null },
+            delta: [
+              { id: 19, count: -1, metadata: null },
+              { id: 20, count: 4, metadata: null }
+            ],
+            requiresTable: false
+          }]
+        : [],
       inventory: {
         items: () => {
           inventoryReads += 1
           return [
             { name: 'apple', count: 2, type: 10 } as Item,
             { name: 'rotten_flesh', count: 3, type: 11 } as Item,
-            { name: 'cobblestone', count: 4, type: 12 } as Item
+            { name: 'cobblestone', count: 4, type: 12 } as Item,
+            { name: 'oak_log', count: 2, type: 19 } as Item
           ]
         }
       },
@@ -37,6 +50,10 @@ describe('perceive', () => {
         foodsByName: {
           apple: { name: 'apple', foodPoints: 4 },
           rotten_flesh: { name: 'rotten_flesh', foodPoints: 4 }
+        },
+        itemsByName: {
+          oak_log: { id: 19, name: 'oak_log' },
+          oak_planks: { id: 20, name: 'oak_planks' }
         }
       }
     } as unknown as Bot
@@ -45,6 +62,13 @@ describe('perceive', () => {
 
     assert.equal(result.edibleItemCount, 2)
     assert.equal(inventoryReads, 1)
+    assert.deepEqual(result.craftableItems, [{
+      item: 'oak_planks',
+      maxCraftable: 8,
+      requiresTable: false
+    }])
+    assert.equal(result.nearbyCraftingTable, false)
+    assert.equal(result.equippedItem, null)
     assert.deepEqual(result.nearbyEntities, [{
       id: 7,
       name: 'creeper',

@@ -19,7 +19,10 @@ const input: BrainInput = {
     nearbyBlocks: [],
     nearbyEntities: [],
     inventory: [],
-    edibleItemCount: 0
+    edibleItemCount: 0,
+    craftableItems: [],
+    nearbyCraftingTable: false,
+    equippedItem: null
   },
   state: {
     agentName: 'Alice',
@@ -91,5 +94,15 @@ describe('Brain decision contract', () => {
     assert.match(contract, /\"explore\"/)
     assert.doesNotMatch(contract, /coordinates|destination|position/)
     assert.match(SYSTEM_INSTRUCTION, /explore/)
+  })
+
+  it('bounds grounded crafting to a registry name and a small integer amount', () => {
+    const contract = JSON.stringify(DECISION_JSON_SCHEMA)
+
+    assert.match(contract, /\"craft_item\"/)
+    assert.match(contract, /\"amount\"/)
+    assert.match(contract, /\"maximum\":64/)
+    assert.match(contract, /\"type\":\"integer\"/)
+    assert.match(SYSTEM_INSTRUCTION, /craft_item/)
   })
 })
