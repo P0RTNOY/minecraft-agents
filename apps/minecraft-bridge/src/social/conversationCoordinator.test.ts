@@ -304,7 +304,7 @@ describe('ConversationCoordinator', () => {
     await automatic.waitForIdle()
   })
 
-  it('closes all sessions during shutdown and rejects late starts and outputs', async () => {
+  it('prepare-stops all sessions and rejects late starts and outputs', async () => {
     const held = deferred<unknown>()
     const alice = participant('alice', { generate: async () => held.promise })
     const bob = participant('bob')
@@ -312,19 +312,20 @@ describe('ConversationCoordinator', () => {
     await coordinator.startConversation('alice', 'bob', 'operator')
     await eventually(() => alice.generatedTurns.length === 1)
 
-    coordinator.prepareStop()
+    const stopping = coordinator.prepareStop()
     assert.deepEqual(
       await coordinator.startConversation('alice', 'bob', 'operator'),
       { accepted: false, reason: 'stopping' }
     )
-    await coordinator.close()
-    const eventsAfterClose = alice.events.length + bob.events.length
     held.resolve(validResponse('late'))
+    await stopping
     await coordinator.waitForIdle()
+    const eventsAfterStop = alice.events.length + bob.events.length
+    await coordinator.close()
 
     assert.deepEqual(coordinator.snapshot().sessions, [])
     assert.deepEqual(alice.emitted, [])
-    assert.equal(alice.events.length + bob.events.length, eventsAfterClose)
+    assert.equal(alice.events.length + bob.events.length, eventsAfterStop)
   })
 })
 

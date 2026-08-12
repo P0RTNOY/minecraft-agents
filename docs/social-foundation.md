@@ -2,11 +2,14 @@
 
 ## Status and boundary
 
-M6 is complete on `feature/social-foundation`. It gives the configured Alice,
-Bob, and Charlie runtimes a bounded pairwise conversation protocol, directed
-relationship state, perspective-specific social memory, and compact social
-context for ordinary Brain decisions. It does not add actions or change the
-`AgentDecision` vocabulary established by earlier milestones.
+M6 implementation is complete on `feature/social-foundation`. It gives the
+configured Alice, Bob, and Charlie runtimes a bounded pairwise conversation
+protocol, directed relationship state, perspective-specific social memory,
+and compact social context for ordinary Brain decisions. It does not add
+actions or change the `AgentDecision` vocabulary established by earlier
+milestones. A final merge-readiness review fixed a prepare-stop race after the
+sealed security scan, so a replacement diff-scoped security review is required
+before merge.
 
 M6 remains a foundation, not a society simulation. It does not implement group
 conversations, professions, organizations, shared plans, delegated work,
@@ -298,11 +301,12 @@ The sealed diff-scoped security review covers `main` at `0a32356` through M6
 source head `ac7c3e11226a4c1308ed511b658f4ec847a95c49`. It completed all 48
 full-file worklist rows with no deferred coverage and zero reportable findings.
 The review reproduced and fixed the empty-allowlist paid-social-start path;
-fixed-head regression coverage now requires an explicit operator for `talk`.
-The review also verified strict provider boundaries, atomic isolated
-persistence, stale-effect suppression, bounded reliability reporting, and
-privacy-safe telemetry. Changes after that fixed head are documentation and
-evidence only, so the sealed source result remains applicable.
+fixed-head regression coverage requires an explicit operator for `talk`. It
+also verified strict provider boundaries, atomic isolated persistence,
+stale-effect suppression, bounded reliability reporting, and privacy-safe
+telemetry. A later final merge-readiness review changed source to retire active
+sessions during prepare-stop, so the sealed result no longer covers the current
+source head and a replacement security scan is required.
 
 ## Reproduction
 
@@ -376,4 +380,6 @@ still be supplied by the caller.
 - Live safety counters are supporting observations; deterministic tests and the
   sealed security review provide the direct boundary proofs.
 
-Within these limits, M6 is ready to merge. M7 has not started.
+Within these limits, M6 implementation is complete. It is not ready to merge
+until a replacement security scan clears the post-`ac7c3e1` shutdown fix. M7
+has not started.

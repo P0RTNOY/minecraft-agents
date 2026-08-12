@@ -162,6 +162,7 @@ export class ConversationCoordinator {
   private readonly encounterCooldowns = new Map<string, number>()
   private readonly workers = new Set<Promise<void>>()
   private accepting = true
+  private stopPromise: Promise<void> | null = null
   private conversationSequence = 0
   private eventSequence = 0
 
@@ -348,15 +349,18 @@ export class ConversationCoordinator {
     return true
   }
 
-  prepareStop(): void {
+  prepareStop(): Promise<void> {
     this.accepting = false
+    if (!this.stopPromise) {
+      this.stopPromise = Promise.all(
+        [...this.sessions.values()].map(session => this.finish(session, 'shutdown'))
+      ).then(() => {})
+    }
+    return this.stopPromise
   }
 
-  async close(): Promise<void> {
-    this.prepareStop()
-    await Promise.all(
-      [...this.sessions.values()].map(session => this.finish(session, 'shutdown'))
-    )
+  close(): Promise<void> {
+    return this.prepareStop()
   }
 
   async waitForIdle(): Promise<void> {
