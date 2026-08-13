@@ -13,6 +13,7 @@ import {
   writeSocialReliabilityReport,
   type SocialReliabilityCohort
 } from './reliability.js'
+import { connectValidationOperator } from './validationOperator.js'
 
 async function main(): Promise<void> {
   const sessionMs = readM6SessionMs(process.env.M6_SESSION_MS)
@@ -56,10 +57,11 @@ async function main(): Promise<void> {
       )
       if (talk) {
         await wait(2_000)
-        operator = await connectOperator(
-          composition.agentConfiguration.minecraft.host,
-          composition.agentConfiguration.minecraft.port
-        )
+        operator = await connectValidationOperator({
+          host: composition.agentConfiguration.minecraft.host,
+          port: composition.agentConfiguration.minecraft.port,
+          createBot: options => mineflayer.createBot(options)
+        })
         operator.chat(`${talk.initiatorUsername} talk ${talk.targetAgentId}`)
       }
       await wait(sessionMs)
@@ -90,11 +92,11 @@ async function main(): Promise<void> {
     shutdown,
     snapshots,
     safety: {
-      runawayLoops: 0,
-      commandRoutingFailures: 0,
-      crossAgentMemoryLeaks: 0,
-      crossAgentRelationshipLeaks: 0,
-      unverifiedClaimsPromotedToFacts: 0
+      runawayLoops: null,
+      commandRoutingFailures: null,
+      crossAgentMemoryLeaks: null,
+      crossAgentRelationshipLeaks: null,
+      unverifiedClaimsPromotedToFacts: null
     }
   }])
   assertM6LiveBudget(usedBudget, {
@@ -187,29 +189,6 @@ function readRunId(value: string | undefined): string {
     throw new Error('M6_RUN_ID is invalid.')
   }
   return runId
-}
-
-async function connectOperator(host: string, port: number): Promise<Bot> {
-  const bot = mineflayer.createBot({
-    host,
-    port,
-    username: 'M6Operator',
-    auth: 'offline'
-  })
-  await new Promise<void>((resolveSpawn, reject) => {
-    const timer = setTimeout(() => reject(new Error(
-      'M6 operator spawn timed out.'
-    )), 30_000)
-    bot.once('spawn', () => {
-      clearTimeout(timer)
-      resolveSpawn()
-    })
-    bot.once('error', error => {
-      clearTimeout(timer)
-      reject(error)
-    })
-  })
-  return bot
 }
 
 async function disconnect(bot: Bot): Promise<void> {

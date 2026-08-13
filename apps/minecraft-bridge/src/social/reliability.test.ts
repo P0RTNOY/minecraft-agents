@@ -97,6 +97,26 @@ describe('M6 social reliability reporting', () => {
     )
   })
 
+  it('marks unmeasured safety checks explicitly and fails the run closed', () => {
+    const unmeasured = evidence('one-unmeasured', 'one_agent', [
+      snapshot('alice', 'Alice')
+    ])
+    unmeasured.safety = {
+      runawayLoops: null,
+      commandRoutingFailures: null,
+      crossAgentMemoryLeaks: null,
+      crossAgentRelationshipLeaks: null,
+      unverifiedClaimsPromotedToFacts: null
+    }
+
+    const report = createSocialReliabilityReport([unmeasured])
+
+    assert.equal(report.runs[0]?.valid, false)
+    assert.deepEqual(report.runs[0]?.safety, unmeasured.safety)
+    assert.equal(report.aggregate.runawayLoopCount, null)
+    assert.equal(report.aggregate.unverifiedClaimsPromotedToFacts, null)
+  })
+
   it('refuses projected live use at the hard call or cost budget', () => {
     assert.doesNotThrow(() => assertM6LiveBudget({
       providerCalls: 299,

@@ -23,11 +23,11 @@ export type SocialReliabilityCohort =
   | 'three_agent'
 
 export interface SocialSafetyCounters {
-  runawayLoops: number
-  commandRoutingFailures: number
-  crossAgentMemoryLeaks: number
-  crossAgentRelationshipLeaks: number
-  unverifiedClaimsPromotedToFacts: number
+  runawayLoops: number | null
+  commandRoutingFailures: number | null
+  crossAgentMemoryLeaks: number | null
+  crossAgentRelationshipLeaks: number | null
+  unverifiedClaimsPromotedToFacts: number | null
 }
 
 export interface SocialReliabilityRunEvidence {
@@ -115,10 +115,10 @@ export interface SocialReliabilityReport {
     outputTokens: number
     socialCallsPerSession: number | null
     totalEstimatedCostUsd: number
-    runawayLoopCount: number
-    commandRoutingFailures: number
-    crossAgentMemoryLeaks: number
-    crossAgentRelationshipLeaks: number
+    runawayLoopCount: number | null
+    commandRoutingFailures: number | null
+    crossAgentMemoryLeaks: number | null
+    crossAgentRelationshipLeaks: number | null
     invalidSocialOutputRate: number | null
     relationshipUpdates: {
       agentSeen: number
@@ -128,7 +128,7 @@ export interface SocialReliabilityReport {
     staleSocialOutputsDiscarded: number
     sessionBudgetExhaustions: number
     loopPreventionRejections: number
-    unverifiedClaimsPromotedToFacts: number
+    unverifiedClaimsPromotedToFacts: number | null
   }
 }
 
@@ -223,10 +223,14 @@ export function createSocialReliabilityReport(
       outputTokens,
       socialCallsPerSession: ratio(socialProviderCalls, conversationsStarted),
       totalEstimatedCostUsd: estimateGpt5MiniCost(inputTokens, outputTokens),
-      runawayLoopCount: sum(runs, run => run.safety.runawayLoops),
-      commandRoutingFailures: sum(runs, run => run.safety.commandRoutingFailures),
-      crossAgentMemoryLeaks: sum(runs, run => run.safety.crossAgentMemoryLeaks),
-      crossAgentRelationshipLeaks: sum(
+      runawayLoopCount: sumMeasured(runs, run => run.safety.runawayLoops),
+      commandRoutingFailures: sumMeasured(
+        runs, run => run.safety.commandRoutingFailures
+      ),
+      crossAgentMemoryLeaks: sumMeasured(
+        runs, run => run.safety.crossAgentMemoryLeaks
+      ),
+      crossAgentRelationshipLeaks: sumMeasured(
         runs,
         run => run.safety.crossAgentRelationshipLeaks
       ),
@@ -239,7 +243,7 @@ export function createSocialReliabilityReport(
         item => item.budgetExhaustions
       ),
       loopPreventionRejections: sum(social, item => item.loopRejections),
-      unverifiedClaimsPromotedToFacts: sum(
+      unverifiedClaimsPromotedToFacts: sumMeasured(
         runs,
         run => run.safety.unverifiedClaimsPromotedToFacts
       )
@@ -455,7 +459,7 @@ function validateEvidence(evidence: SocialReliabilityRunEvidence): void {
   requireNonNegativeInteger(evidence.endedAt, 'endedAt')
   if (evidence.endedAt < evidence.startedAt) throw new Error('M6 run time is invalid.')
   for (const value of Object.values(evidence.safety)) {
-    requireNonNegativeInteger(value, 'safety counter')
+    requireNonNegativeIntegerOrNull(value, 'safety counter')
   }
 }
 
@@ -512,11 +516,14 @@ function validateAggregate(value: Record<string, unknown>): void {
   for (const field of [
     'providerCalls', 'providerFailures', 'brainProviderCalls',
     'socialProviderCalls', 'inputTokens', 'outputTokens',
-    'runawayLoopCount', 'commandRoutingFailures', 'crossAgentMemoryLeaks',
-    'crossAgentRelationshipLeaks', 'socialEpisodesRecorded',
+    'socialEpisodesRecorded',
     'staleSocialOutputsDiscarded', 'sessionBudgetExhaustions',
-    'loopPreventionRejections', 'unverifiedClaimsPromotedToFacts'
+    'loopPreventionRejections'
   ]) requireNonNegativeInteger(value[field], field)
+  for (const field of [
+    'runawayLoopCount', 'commandRoutingFailures', 'crossAgentMemoryLeaks',
+    'crossAgentRelationshipLeaks', 'unverifiedClaimsPromotedToFacts'
+  ]) requireNonNegativeIntegerOrNull(value[field], field)
   for (const field of ['oneAgent', 'twoAgent', 'threeAgent']) {
     requireNonNegativeInteger(value.validSessions[field], field)
   }
@@ -570,8 +577,21 @@ function validateSafety(value: Record<string, unknown>): void {
     'crossAgentRelationshipLeaks', 'unverifiedClaimsPromotedToFacts'
   ])
   for (const candidate of Object.values(value)) {
-    requireNonNegativeInteger(candidate, 'safety counter')
+    requireNonNegativeIntegerOrNull(candidate, 'safety counter')
   }
+}
+
+function sumMeasured<T>(
+  values: readonly T[],
+  read: (value: T) => number | null
+): number | null {
+  let total = 0
+  for (const value of values) {
+    const measurement = read(value)
+    if (measurement === null) return null
+    total += measurement
+  }
+  return total
 }
 
 function pairwiseCounter<T>(values: readonly T[], read: (value: T) => number): number {
@@ -649,6 +669,11 @@ function requireNonNegativeInteger(value: unknown, label: string): void {
   if (!Number.isSafeInteger(value) || (value as number) < 0) {
     throw new Error(`M6 reliability ${label} is invalid.`)
   }
+}
+
+function requireNonNegativeIntegerOrNull(value: unknown, label: string): void {
+  if (value === null) return
+  requireNonNegativeInteger(value, label)
 }
 
 function requireCost(value: unknown, label: string): void {
