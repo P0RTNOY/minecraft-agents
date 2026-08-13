@@ -101,6 +101,29 @@ describe('social memory', () => {
     assert.equal(coordinator.metrics().persistenceFailures, 1)
   })
 
+  it('preserves old and new social episodes across a coordinator restart', async () => {
+    const store = new StoreDouble()
+    const beforeRestart = memory('alice', store)
+    const afterRestart = memory('alice', store)
+
+    await beforeRestart.recordSocial(socialMemoryEvent({
+      ...lifecycleEvent('alice', 'bob', 'conversation_completed'),
+      id: 'social-event-first-runtime'
+    }))
+    await afterRestart.recordSocial(socialMemoryEvent({
+      ...lifecycleEvent('alice', 'bob', 'conversation_completed'),
+      id: 'social-event-second-runtime',
+      timestamp: 20
+    }))
+
+    assert.equal(store.episodes.length, 2)
+    assert.deepEqual(
+      store.episodes.map(item => item.context.socialEventId).sort(),
+      ['social-event-first-runtime', 'social-event-second-runtime']
+    )
+    assert.equal(new Set(store.episodes.map(item => item.id)).size, 2)
+  })
+
   it('rejects the wrong observer or world without storing cross-agent memory', async () => {
     const store = new StoreDouble()
     const coordinator = memory('alice', store)

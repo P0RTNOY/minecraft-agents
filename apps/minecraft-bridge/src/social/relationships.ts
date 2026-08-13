@@ -151,6 +151,7 @@ export class AgentRelationshipService {
   private readonly configuredTargetAgentIds: ReadonlySet<string>
   private readonly store: RelationshipStore
   private readonly encounterCooldownMs: number
+  private readonly mutationTails = new Map<string, Promise<void>>()
 
   constructor(options: AgentRelationshipServiceOptions) {
     this.identity = { ...options.identity }
@@ -181,19 +182,21 @@ export class AgentRelationshipService {
     if (!targetAgentId || !this.configuredTargetAgentIds.has(targetAgentId)) {
       throw new Error('Social event target must name a configured target agent.')
     }
-    const existing = await this.store.get(targetAgentId)
-    const relationship = existing ?? createEmptyRelationship({
-      ...this.identity,
-      targetAgentId,
-      timestamp: event.timestamp
+    return this.serializeMutation(targetAgentId, async () => {
+      const existing = await this.store.get(targetAgentId)
+      const relationship = existing ?? createEmptyRelationship({
+        ...this.identity,
+        targetAgentId,
+        timestamp: event.timestamp
+      })
+      const update = applyRelationshipEvent(
+        relationship,
+        event,
+        this.encounterCooldownMs
+      )
+      if (update.changed) await this.store.put(update.record)
+      return update
     })
-    const update = applyRelationshipEvent(
-      relationship,
-      event,
-      this.encounterCooldownMs
-    )
-    if (update.changed) await this.store.put(update.record)
-    return update
   }
 
   async summariesFor(targetAgentIds: readonly string[]): Promise<RelationshipRecord[]> {
@@ -202,6 +205,7 @@ export class AgentRelationshipService {
       if (!this.configuredTargetAgentIds.has(targetAgentId)) {
         throw new Error('Relationship summary target must be a configured target agent.')
       }
+      await this.mutationTails.get(targetAgentId)
       summaries.push((await this.store.get(targetAgentId)) ?? createEmptyRelationship({
         ...this.identity,
         targetAgentId,
@@ -209,6 +213,22 @@ export class AgentRelationshipService {
       }))
     }
     return summaries.map(record => ({ ...record }))
+  }
+
+  private serializeMutation<T>(
+    targetAgentId: string,
+    task: () => Promise<T>
+  ): Promise<T> {
+    const previous = this.mutationTails.get(targetAgentId) ?? Promise.resolve()
+    const operation = previous.then(task)
+    const tail = operation.then(() => {}, () => {})
+    this.mutationTails.set(targetAgentId, tail)
+    void tail.then(() => {
+      if (this.mutationTails.get(targetAgentId) === tail) {
+        this.mutationTails.delete(targetAgentId)
+      }
+    })
+    return operation
   }
 }
 

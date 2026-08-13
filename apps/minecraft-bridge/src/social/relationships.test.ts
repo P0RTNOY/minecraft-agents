@@ -218,6 +218,27 @@ describe('AgentRelationshipService', () => {
       { target: 'charlie', familiarity: 0 }
     ])
   })
+
+  it('serializes concurrent updates for the same directed relationship', async () => {
+    const store = new HeldFirstPutStore()
+    const service = new AgentRelationshipService({
+      identity: { observerAgentId: 'alice', worldId: 'local-paper' },
+      configuredTargetAgentIds: ['bob'],
+      store,
+      encounterCooldownMs: 0
+    })
+
+    const first = service.record(seenEvent({ timestamp: 10 }))
+    await store.firstPutStarted.promise
+    const second = service.record(
+      conversationEvent('conversation_completed', 20)
+    )
+    await turn()
+    store.releaseFirstPut.resolve()
+    await Promise.all([first, second])
+
+    assert.equal((await store.get('bob'))?.familiarity, 3)
+  })
 })
 
 class InMemoryRelationshipStore implements RelationshipStore {
@@ -237,6 +258,21 @@ class InMemoryRelationshipStore implements RelationshipStore {
 
   async put(record: RelationshipRecord): Promise<void> {
     this.records.set(record.targetAgentId, { ...record })
+  }
+}
+
+class HeldFirstPutStore extends InMemoryRelationshipStore {
+  readonly firstPutStarted = deferred<void>()
+  readonly releaseFirstPut = deferred<void>()
+  private puts = 0
+
+  override async put(record: RelationshipRecord): Promise<void> {
+    this.puts += 1
+    if (this.puts === 1) {
+      this.firstPutStarted.resolve()
+      await this.releaseFirstPut.promise
+    }
+    await super.put(record)
   }
 }
 
@@ -290,4 +326,14 @@ function conversationEvent(
       ? { trigger: 'operator' }
       : { outcome: type === 'conversation_completed' ? 'completed' : 'danger', turns: 2 }
   }
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>(resolvePromise => { resolve = resolvePromise })
+  return { promise, resolve }
+}
+
+function turn(): Promise<void> {
+  return new Promise(resolve => setImmediate(resolve))
 }

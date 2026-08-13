@@ -304,6 +304,69 @@ describe('ConversationCoordinator', () => {
     await automatic.waitForIdle()
   })
 
+  it('uses restart-safe event identities across coordinator instances', async () => {
+    const firstAlice = participant('alice')
+    const first = coordinatorWith([firstAlice, participant('bob')], {
+      eventIdFactory: () => 'social-event-first-runtime'
+    })
+    const secondAlice = participant('alice')
+    const second = coordinatorWith([secondAlice, participant('bob')], {
+      eventIdFactory: () => 'social-event-second-runtime'
+    })
+
+    await first.observeEncounter('alice', 'bob')
+    await second.observeEncounter('alice', 'bob')
+
+    assert.equal(firstAlice.events[0]?.id, 'social-event-first-runtime')
+    assert.equal(secondAlice.events[0]?.id, 'social-event-second-runtime')
+    assert.notEqual(firstAlice.events[0]?.id, secondAlice.events[0]?.id)
+  })
+
+  it('rejects malformed generated event identities before persistence', async () => {
+    const alice = participant('alice')
+    const coordinator = coordinatorWith([alice, participant('bob')], {
+      eventIdFactory: () => '../invalid'
+    })
+
+    await assert.rejects(
+      coordinator.observeEncounter('alice', 'bob'),
+      /id is invalid/i
+    )
+    assert.deepEqual(alice.events, [])
+  })
+
+  it('drains an in-flight encounter and rejects queued encounters during stop', async () => {
+    const releaseRecord = deferred<void>()
+    const recordStarted = deferred<void>()
+    const alice = participant('alice', {
+      record: async () => {
+        recordStarted.resolve()
+        await releaseRecord.promise
+      }
+    })
+    const coordinator = coordinatorWith([alice, participant('bob')], {
+      autoGreeting: true
+    })
+    const encounter = coordinator.observeEncounter('alice', 'bob')
+    await recordStarted.promise
+
+    let stopped = false
+    const stopping = coordinator.prepareStop().then(() => { stopped = true })
+    await turn()
+    assert.equal(stopped, false)
+    assert.deepEqual(await coordinator.observeEncounter('bob', 'alice'), {
+      recorded: false,
+      conversation: null
+    })
+
+    releaseRecord.resolve()
+    assert.deepEqual(await encounter, { recorded: true, conversation: null })
+    await stopping
+    await coordinator.close()
+    assert.deepEqual(coordinator.snapshot().sessions, [])
+    assert.equal(alice.generatedTurns.length, 0)
+  })
+
   it('prepare-stops all sessions and rejects late starts and outputs', async () => {
     const held = deferred<unknown>()
     const alice = participant('alice', { generate: async () => held.promise })
@@ -332,6 +395,7 @@ describe('ConversationCoordinator', () => {
 interface ParticipantOptions {
   emitted?: string[]
   generate?: (input: SocialGenerationInput, generation: number) => Promise<unknown>
+  record?: (event: SocialEvent) => Promise<void>
 }
 
 class FakeParticipant implements ConversationParticipant {
@@ -348,7 +412,8 @@ class FakeParticipant implements ConversationParticipant {
   constructor(
     readonly agentId: string,
     private readonly generateImpl: ParticipantOptions['generate'],
-    emitted?: string[]
+    emitted?: string[],
+    private readonly recordImpl?: ParticipantOptions['record']
   ) {
     this.username = agentId[0]?.toUpperCase() + agentId.slice(1)
     this.emitted = emitted ?? []
@@ -400,6 +465,7 @@ class FakeParticipant implements ConversationParticipant {
   }
 
   async recordSocialEvent(event: SocialEvent): Promise<void> {
+    await this.recordImpl?.(event)
     this.events.push(event)
   }
 
@@ -411,7 +477,7 @@ class FakeParticipant implements ConversationParticipant {
 }
 
 function participant(agentId: string, options: ParticipantOptions = {}): FakeParticipant {
-  return new FakeParticipant(agentId, options.generate, options.emitted)
+  return new FakeParticipant(agentId, options.generate, options.emitted, options.record)
 }
 
 function coordinatorWith(
@@ -423,6 +489,7 @@ function coordinatorWith(
     autoGreeting?: boolean
     now?: () => number
     telemetry?: ConversationTelemetryEvent[]
+    eventIdFactory?: () => string
   } = {}
 ): ConversationCoordinator {
   const coordinator = new ConversationCoordinator({
@@ -434,6 +501,7 @@ function coordinatorWith(
     turnTimeoutMs: overrides.turnTimeoutMs ?? 1000,
     maxMessageCharacters: 180,
     now: overrides.now,
+    eventIdFactory: overrides.eventIdFactory,
     onTelemetry: event => overrides.telemetry?.push(event)
   })
   for (const value of participants) coordinator.registerParticipant(value)

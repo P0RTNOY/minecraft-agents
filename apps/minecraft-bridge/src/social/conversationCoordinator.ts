@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto'
+
 import { createSocialEvent, type SocialEvent } from './events.js'
 import type {
   SocialGenerationInput,
@@ -108,6 +110,7 @@ export interface ConversationCoordinatorOptions {
   turnTimeoutMs: number
   maxMessageCharacters: number
   now?: () => number
+  eventIdFactory?: () => string
   onTelemetry?: (event: ConversationTelemetryEvent) => void
   logger?: { error(message: string): void }
 }
@@ -153,6 +156,7 @@ export class ConversationCoordinator {
   private readonly turnTimeoutMs: number
   private readonly maxMessageCharacters: number
   private readonly now: () => number
+  private readonly eventIdFactory: () => string
   private readonly onTelemetry: ((event: ConversationTelemetryEvent) => void) | null
   private readonly logger: { error(message: string): void }
   private readonly participants = new Map<string, ConversationParticipant>()
@@ -160,11 +164,10 @@ export class ConversationCoordinator {
   private readonly sessionByAgent = new Map<string, string>()
   private readonly pairCooldowns = new Map<string, number>()
   private readonly encounterCooldowns = new Map<string, number>()
-  private readonly workers = new Set<Promise<void>>()
+  private readonly workers = new Set<Promise<unknown>>()
   private accepting = true
   private stopPromise: Promise<void> | null = null
   private conversationSequence = 0
-  private eventSequence = 0
 
   constructor(options: ConversationCoordinatorOptions) {
     this.enabled = options.enabled
@@ -190,6 +193,9 @@ export class ConversationCoordinator {
       256
     )
     this.now = options.now ?? Date.now
+    this.eventIdFactory = options.eventIdFactory ?? (
+      () => `social-event-${randomUUID()}`
+    )
     this.onTelemetry = options.onTelemetry ?? null
     this.logger = options.logger ?? console
   }
@@ -301,10 +307,24 @@ export class ConversationCoordinator {
     return { accepted: true, conversationId }
   }
 
-  async observeEncounter(
+  observeEncounter(
     observerAgentId: string,
     targetAgentId: string
   ): Promise<EncounterObservationResult> {
+    if (!this.accepting) {
+      return Promise.resolve({ recorded: false, conversation: null })
+    }
+    const worker = this.observeEncounterInternal(observerAgentId, targetAgentId)
+      .finally(() => this.workers.delete(worker))
+    this.workers.add(worker)
+    return worker
+  }
+
+  private async observeEncounterInternal(
+    observerAgentId: string,
+    targetAgentId: string
+  ): Promise<EncounterObservationResult> {
+    if (!this.accepting) return { recorded: false, conversation: null }
     const observer = this.participants.get(observerAgentId)
     const target = this.participants.get(targetAgentId)
     if (!observer || !target || observerAgentId === targetAgentId) {
@@ -330,6 +350,7 @@ export class ConversationCoordinator {
       metadata: {}
     })
     await observer.recordSocialEvent(event)
+    if (!this.accepting) return { recorded: true, conversation: null }
     this.encounterCooldowns.set(key, now)
     const conversation = this.autoGreeting
       ? await this.startConversation(observerAgentId, targetAgentId, 'encounter')
@@ -352,9 +373,12 @@ export class ConversationCoordinator {
   prepareStop(): Promise<void> {
     this.accepting = false
     if (!this.stopPromise) {
-      this.stopPromise = Promise.all(
-        [...this.sessions.values()].map(session => this.finish(session, 'shutdown'))
-      ).then(() => {})
+      this.stopPromise = (async () => {
+        await Promise.all(
+          [...this.sessions.values()].map(session => this.finish(session, 'shutdown'))
+        )
+        await this.waitForIdle()
+      })()
     }
     return this.stopPromise
   }
@@ -646,7 +670,7 @@ export class ConversationCoordinator {
     configuredAgentIds = [...this.participants.keys()]
   ): SocialEvent {
     return createSocialEvent({
-      id: `social-event-${++this.eventSequence}`,
+      id: this.eventIdFactory(),
       ...value
     }, configuredAgentIds)
   }
