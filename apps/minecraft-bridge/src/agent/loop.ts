@@ -241,7 +241,7 @@ export class AutonomousAgentLoop {
       try {
         if (this.cognitiveGate) {
           const cognition = await this.cognitiveGate.runBrain(
-            () => this.provider.decide(input)
+            signal => this.provider.decide(input, signal)
           )
           if (cognition.status === 'stale') {
             return { status: 'skipped', reason: 'stale_cognition' }

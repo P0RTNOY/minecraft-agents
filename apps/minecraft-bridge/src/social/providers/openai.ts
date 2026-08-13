@@ -13,6 +13,7 @@ export interface OpenAISocialProviderOptions {
   model: string
   fetchImpl?: typeof fetch
   requestTimeoutMs?: number
+  maxResponseBytes?: number
   now?: () => number
 }
 
@@ -22,6 +23,7 @@ export class OpenAISocialProvider implements SocialProvider {
   private readonly model: string
   private readonly fetchImpl: typeof fetch
   private readonly requestTimeoutMs: number
+  private readonly maxResponseBytes: number
   private readonly now: () => number
   private lastTiming: LLMRequestTiming | null = null
 
@@ -31,6 +33,7 @@ export class OpenAISocialProvider implements SocialProvider {
     this.model = requireNonEmpty(options.model, 'OpenAI social model')
     this.fetchImpl = options.fetchImpl ?? fetch
     this.requestTimeoutMs = options.requestTimeoutMs ?? 15_000
+    this.maxResponseBytes = options.maxResponseBytes ?? 65_536
     this.now = options.now ?? Date.now
     if (
       !Number.isInteger(this.requestTimeoutMs) ||
@@ -38,6 +41,13 @@ export class OpenAISocialProvider implements SocialProvider {
       this.requestTimeoutMs > 60_000
     ) {
       throw new Error('OpenAI social request timeout must be from 1000 to 60000 ms.')
+    }
+    if (
+      !Number.isSafeInteger(this.maxResponseBytes) ||
+      this.maxResponseBytes < 1024 ||
+      this.maxResponseBytes > 1_048_576
+    ) {
+      throw new Error('OpenAI social response limit must be from 1024 to 1048576 bytes.')
     }
   }
 
@@ -83,9 +93,10 @@ export class OpenAISocialProvider implements SocialProvider {
 
       let envelope: unknown
       try {
-        envelope = await response.json()
-      } catch {
+        envelope = await readBoundedJson(response, this.maxResponseBytes)
+      } catch (error) {
         if (cancellation.signal.aborted) throw abortedError()
+        if (error instanceof ResponseTooLargeError) throw error
         throw new Error('OpenAI social provider returned an invalid JSON response envelope.')
       }
       this.lastTiming = readTiming(envelope, Math.max(0, this.now() - startedAt))
@@ -103,6 +114,45 @@ export class OpenAISocialProvider implements SocialProvider {
   getLastTiming(): LLMRequestTiming | null {
     return this.lastTiming ? { ...this.lastTiming } : null
   }
+}
+
+async function readBoundedJson(response: Response, maximumBytes: number): Promise<unknown> {
+  const declaredLength = response.headers.get('content-length')
+  if (declaredLength !== null) {
+    if (!/^\d+$/.test(declaredLength)) {
+      throw new Error('OpenAI social provider returned an invalid content length.')
+    }
+    if (Number(declaredLength) > maximumBytes) throw responseTooLargeError()
+  }
+  if (!response.body) {
+    throw new Error('OpenAI social provider returned an empty response envelope.')
+  }
+  const reader = response.body.getReader()
+  const chunks: Uint8Array[] = []
+  let total = 0
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    total += value.byteLength
+    if (total > maximumBytes) {
+      await reader.cancel().catch(() => {})
+      throw responseTooLargeError()
+    }
+    chunks.push(value)
+  }
+  const bytes = new Uint8Array(total)
+  let offset = 0
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset)
+    offset += chunk.byteLength
+  }
+  return JSON.parse(new TextDecoder().decode(bytes)) as unknown
+}
+
+class ResponseTooLargeError extends Error {}
+
+function responseTooLargeError(): Error {
+  return new ResponseTooLargeError('OpenAI social provider response is too large.')
 }
 
 function readTiming(envelope: unknown, totalDurationMs: number): LLMRequestTiming {

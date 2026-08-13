@@ -3,6 +3,7 @@ import {
   serializeBrainInput,
   systemInstructionFor
 } from '../decisionContract.js'
+import { abortError, composeCancellation } from '../cancellation.js'
 import type { LLMProvider, LLMRequestTiming } from '../provider.js'
 import type { BrainInput } from '../types.js'
 
@@ -43,59 +44,75 @@ export class OpenAIProvider implements LLMProvider {
     }
   }
 
-  async decide(input: BrainInput): Promise<unknown> {
+  async decide(input: BrainInput, signal?: AbortSignal): Promise<unknown> {
     this.lastTiming = null
-    const response = await this.fetchImpl(this.endpoint, {
-      method: 'POST',
-      headers: {
-        authorization: `Bearer ${this.apiKey}`,
-        'content-type': 'application/json'
-      },
-      body: JSON.stringify({
-        model: this.model,
-        instructions: systemInstructionFor(input.state.agentName),
-        input: JSON.stringify(serializeBrainInput(input)),
-        store: false,
-        reasoning: { effort: 'low' },
-        max_output_tokens: 512,
-        text: {
-          format: {
-            type: 'json_schema',
-            name: 'agent_decision',
-            strict: true,
-            schema: OPENAI_DECISION_SCHEMA
-          }
+    const cancellation = composeCancellation([signal], this.requestTimeoutMs)
+    try {
+      let response: Response
+      try {
+        response = await this.fetchImpl(this.endpoint, {
+          method: 'POST',
+          headers: {
+            authorization: `Bearer ${this.apiKey}`,
+            'content-type': 'application/json'
+          },
+          body: JSON.stringify({
+            model: this.model,
+            instructions: systemInstructionFor(input.state.agentName),
+            input: JSON.stringify(serializeBrainInput(input)),
+            store: false,
+            reasoning: { effort: 'low' },
+            max_output_tokens: 512,
+            text: {
+              format: {
+                type: 'json_schema',
+                name: 'agent_decision',
+                strict: true,
+                schema: OPENAI_DECISION_SCHEMA
+              }
+            }
+          }),
+          signal: cancellation.signal
+        })
+      } catch {
+        if (cancellation.signal.aborted) {
+          throw abortError('OpenAI request was aborted.')
         }
-      }),
-      signal: AbortSignal.timeout(this.requestTimeoutMs)
-    })
+        throw new Error('OpenAI request failed.')
+      }
 
-    if (!response.ok) {
-      throw new Error(`OpenAI request failed with HTTP ${response.status}.`)
+      if (!response.ok) {
+        throw new Error(`OpenAI request failed with HTTP ${response.status}.`)
+      }
+
+      let envelope: unknown
+      try {
+        envelope = await response.json()
+      } catch {
+        if (cancellation.signal.aborted) {
+          throw abortError('OpenAI request was aborted.')
+        }
+        throw new Error('OpenAI returned an invalid JSON response envelope.')
+      }
+
+      this.lastTiming = readUsageTiming(envelope)
+      const content = readDecisionContent(envelope)
+
+      let parsed: unknown
+      try {
+        parsed = JSON.parse(content) as unknown
+      } catch {
+        throw new Error('OpenAI model response contained invalid JSON.')
+      }
+
+      if (!isRecord(parsed) || !('decision' in parsed)) {
+        throw new Error('OpenAI response is missing the decision object.')
+      }
+
+      return parsed.decision
+    } finally {
+      cancellation.dispose()
     }
-
-    let envelope: unknown
-    try {
-      envelope = await response.json()
-    } catch {
-      throw new Error('OpenAI returned an invalid JSON response envelope.')
-    }
-
-    this.lastTiming = readUsageTiming(envelope)
-    const content = readDecisionContent(envelope)
-
-    let parsed: unknown
-    try {
-      parsed = JSON.parse(content) as unknown
-    } catch {
-      throw new Error('OpenAI model response contained invalid JSON.')
-    }
-
-    if (!isRecord(parsed) || !('decision' in parsed)) {
-      throw new Error('OpenAI response is missing the decision object.')
-    }
-
-    return parsed.decision
   }
 
   getLastTiming(): LLMRequestTiming | null {

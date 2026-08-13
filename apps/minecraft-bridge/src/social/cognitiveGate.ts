@@ -1,3 +1,5 @@
+import { abortable } from '../brain/cancellation.js'
+
 export type CognitiveSuppressionReason = 'busy' | 'social_session' | 'stopped'
 
 export type CognitiveRunResult<T> =
@@ -103,7 +105,11 @@ export class CognitiveGate {
     }
     this.active = call
     try {
-      const value = await task(call.controller.signal)
+      const value = await abortable(
+        task(call.controller.signal),
+        call.controller.signal,
+        'Cognitive work was invalidated.'
+      )
       return this.active === call && this.matches(generation)
         ? { status: 'completed', value }
         : { status: 'stale' }

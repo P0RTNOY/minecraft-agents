@@ -12,6 +12,6 @@ export interface LLMRequestTiming {
 }
 
 export interface LLMProvider {
-  decide(input: BrainInput): Promise<unknown>
+  decide(input: BrainInput, signal?: AbortSignal): Promise<unknown>
   getLastTiming?(): LLMRequestTiming | null
 }

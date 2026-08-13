@@ -48,11 +48,13 @@ describe('AutonomousAgentLoop', () => {
     const gate = new CognitiveGate()
     const decision = deferred<unknown>()
     const providerStarted = deferred<void>()
+    const providerSignals: AbortSignal[] = []
     let executions = 0
     const loop = createLoop({
       cognitiveGate: gate,
       provider: {
-        decide: async () => {
+        decide: async (_input, signal) => {
+          if (signal) providerSignals.push(signal)
           providerStarted.resolve()
           return decision.promise
         }
@@ -66,6 +68,7 @@ describe('AutonomousAgentLoop', () => {
     await providerStarted.promise
 
     gate.beginSocialSession('conversation-1')
+    assert.equal(providerSignals[0]?.aborted, true)
     decision.resolve({ action: 'idle', reason: 'Wait.' })
 
     assert.deepEqual(await cycle, {

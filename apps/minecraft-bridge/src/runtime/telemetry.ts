@@ -1,4 +1,5 @@
 import type { LLMProvider, LLMRequestTiming } from '../brain/provider.js'
+import { abortable, composeCancellation } from '../brain/cancellation.js'
 import type { MemoryMetrics } from '../memory/coordinator.js'
 import type { ConversationTelemetryEvent } from '../social/conversationCoordinator.js'
 import type { SocialEventType } from '../social/events.js'
@@ -223,12 +224,16 @@ export function instrumentAgentProvider(
 ): LLMProvider {
   let lastTiming: LLMRequestTiming | null = null
   return {
-    decide(input) {
+    decide(input, callSignal) {
+      const cancellation = composeCancellation([signal, callSignal])
       return limiter.run(async queueWaitMs => {
         const startedAt = now()
         let succeeded = false
         try {
-          const output = await provider.decide(input)
+          const output = await abortable(
+            provider.decide(input, cancellation.signal),
+            cancellation.signal
+          )
           succeeded = true
           return output
         } finally {
@@ -246,7 +251,7 @@ export function instrumentAgentProvider(
             timing: providerTiming
           })
         }
-      }, signal)
+      }, cancellation.signal).finally(() => cancellation.dispose())
     },
     getLastTiming: () => lastTiming ? { ...lastTiming } : null
   }
@@ -262,12 +267,16 @@ export function instrumentSocialProvider(
   let lastTiming: LLMRequestTiming | null = null
   return {
     generate(input, callSignal) {
-      const cancellation = composeSignals(runtimeSignal, callSignal)
+      const cancellation = composeCancellation([runtimeSignal, callSignal])
       return limiter.run(async queueWaitMs => {
         const startedAt = now()
         let succeeded = false
         try {
-          const output = await provider.generate(input, cancellation.signal)
+          const output = await abortable(
+            provider.generate(input, cancellation.signal),
+            cancellation.signal,
+            'Social provider request was aborted.'
+          )
           succeeded = true
           return output
         } finally {
@@ -365,25 +374,5 @@ function cloneSocialTelemetry(value: SocialTelemetrySnapshot): SocialTelemetrySn
     providerQueueWaitMs: [...value.providerQueueWaitMs],
     terminalConversationTurns: [...value.terminalConversationTurns],
     relationshipUpdates: { ...value.relationshipUpdates }
-  }
-}
-
-function composeSignals(
-  first: AbortSignal,
-  second?: AbortSignal
-): { signal: AbortSignal; dispose(): void } {
-  const controller = new AbortController()
-  const abort = () => controller.abort()
-  for (const signal of [first, second]) {
-    if (!signal) continue
-    if (signal.aborted) controller.abort()
-    else signal.addEventListener('abort', abort, { once: true })
-  }
-  return {
-    signal: controller.signal,
-    dispose() {
-      first.removeEventListener('abort', abort)
-      second?.removeEventListener('abort', abort)
-    }
   }
 }

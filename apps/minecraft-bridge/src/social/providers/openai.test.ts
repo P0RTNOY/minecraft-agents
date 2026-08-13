@@ -188,6 +188,71 @@ describe('OpenAISocialProvider', () => {
     })
   })
 
+  it('bounds chunked response bytes before parsing the JSON envelope', async () => {
+    let cancelled = false
+    const oversized = JSON.stringify({
+      status: 'completed',
+      output: [{
+        type: 'message',
+        role: 'assistant',
+        content: [{
+          type: 'output_text',
+          text: JSON.stringify({
+            message: 'x'.repeat(2_000),
+            intent: 'reply',
+            continueConversation: false
+          })
+        }]
+      }]
+    })
+    const bytes = new TextEncoder().encode(oversized)
+    const provider = new OpenAISocialProvider({
+      baseUrl: 'https://api.openai.com/v1',
+      apiKey: 'test-api-key',
+      model: 'gpt-5-mini',
+      maxResponseBytes: 1024,
+      fetchImpl: async () => responseWithChunks(
+        [bytes.subarray(0, 700), bytes.subarray(700)],
+        {},
+        { onCancel: () => { cancelled = true } }
+      )
+    })
+
+    await assert.rejects(provider.generate(generationInput), /response is too large/i)
+    assert.equal(cancelled, true)
+  })
+
+  it('rejects an oversized declared content length before consuming the body', async () => {
+    let pulled = false
+    const valid = new TextEncoder().encode(JSON.stringify({
+      status: 'completed',
+      output: [{
+        type: 'message',
+        role: 'assistant',
+        content: [{
+          type: 'output_text',
+          text: JSON.stringify({
+            message: 'Hello.', intent: 'reply', continueConversation: false
+          })
+        }]
+      }]
+    }))
+    const provider = new OpenAISocialProvider({
+      baseUrl: 'https://api.openai.com/v1',
+      apiKey: 'test-api-key',
+      model: 'gpt-5-mini',
+      maxResponseBytes: 1024,
+      fetchImpl: async () => responseWithChunks(
+        [valid],
+        { 'content-length': '2048' },
+        { onRead: () => { pulled = true } }
+      )
+    })
+
+    await assert.rejects(provider.generate(generationInput), /response is too large/i)
+    assert.equal(pulled, false)
+  })
+
   it('rejects refusals, incomplete envelopes, malformed JSON, and absent output safely', async () => {
     const refusal = providerReturning(new Response(JSON.stringify({
       status: 'completed',
@@ -242,6 +307,31 @@ function responseEnvelopeText(text: string, usage?: unknown): Response {
     }],
     ...(usage ? { usage } : {})
   }))
+}
+
+function responseWithChunks(
+  chunks: readonly Uint8Array[],
+  headers: HeadersInit,
+  hooks: { onRead?: () => void; onCancel?: () => void }
+): Response {
+  let index = 0
+  return {
+    ok: true,
+    status: 200,
+    headers: new Headers(headers),
+    body: {
+      getReader() {
+        return {
+          async read() {
+            hooks.onRead?.()
+            const value = chunks[index++]
+            return value ? { done: false as const, value } : { done: true as const, value: undefined }
+          },
+          async cancel() { hooks.onCancel?.() }
+        }
+      }
+    }
+  } as unknown as Response
 }
 
 function sequenceClock(...values: number[]): () => number {

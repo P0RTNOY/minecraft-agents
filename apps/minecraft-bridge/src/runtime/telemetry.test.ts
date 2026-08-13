@@ -175,6 +175,42 @@ describe('AgentRuntimeTelemetry', () => {
     assert.equal(bobTelemetry.snapshot().inputTokens, 10)
   })
 
+  it('propagates call cancellation and releases a permit when a provider ignores abort', async () => {
+    const limiter = new ProviderConcurrencyLimiter(1)
+    const telemetry = new AgentRuntimeTelemetry({ agentId: 'alice', username: 'Alice' })
+    const held = deferred<unknown>()
+    const receivedSignals: AbortSignal[] = []
+    let calls = 0
+    const underlying: LLMProvider = {
+      async decide(_input, signal) {
+        calls += 1
+        if (signal) receivedSignals.push(signal)
+        return calls === 1 ? held.promise : { action: 'idle', reason: 'Wait.' }
+      }
+    }
+    const provider = instrumentAgentProvider(
+      underlying,
+      limiter,
+      telemetry,
+      new AbortController().signal
+    )
+    const controller = new AbortController()
+    const first = provider.decide(createBootstrapBrainInput(), controller.signal)
+    void first.catch(() => {})
+    await turn()
+
+    controller.abort()
+    const second = provider.decide(createBootstrapBrainInput())
+    try {
+      await eventually(() => calls === 2)
+      assert.equal(receivedSignals[0]?.aborted, true)
+      await assert.rejects(first, error => (error as Error).name === 'AbortError')
+      assert.deepEqual(await second, { action: 'idle', reason: 'Wait.' })
+    } finally {
+      held.resolve({ action: 'idle', reason: 'late' })
+    }
+  })
+
   it('aggregates only numeric per-agent measurements', () => {
     const alice = new AgentRuntimeTelemetry({ agentId: 'alice', username: 'Alice' })
     const bob = new AgentRuntimeTelemetry({ agentId: 'bob', username: 'Bob' })
@@ -213,4 +249,22 @@ function provider(label: string): LLMProvider & { received?: unknown[] } {
     getLastTiming: () => ({ promptTokens: 10, outputTokens: 2 })
   }
   return value
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>(resolvePromise => { resolve = resolvePromise })
+  return { promise, resolve }
+}
+
+function turn(): Promise<void> {
+  return new Promise(resolve => setImmediate(resolve))
+}
+
+async function eventually(predicate: () => boolean): Promise<void> {
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    if (predicate()) return
+    await new Promise(resolve => setTimeout(resolve, 2))
+  }
+  assert.fail('Condition was not reached in time.')
 }

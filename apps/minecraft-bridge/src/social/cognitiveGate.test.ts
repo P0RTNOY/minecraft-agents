@@ -94,6 +94,22 @@ describe('CognitiveGate', () => {
     assert.deepEqual(await social, { status: 'stale' })
   })
 
+  it('releases the gate promptly when invalidated work ignores abort', async () => {
+    const gate = new CognitiveGate()
+    const generation = gate.beginSocialSession('conversation-1')
+    const never = new Promise<string>(() => {})
+    const social = gate.runSocial(generation, async () => never)
+    await turn()
+
+    gate.invalidate('manual')
+
+    assert.deepEqual(await Promise.race([
+      social,
+      new Promise(resolve => setTimeout(() => resolve('still-pending'), 20))
+    ]), { status: 'stale' })
+    assert.equal(gate.snapshot().busy, false)
+  })
+
   it('releases the gate after provider failure without permanent busy state', async () => {
     const gate = new CognitiveGate()
     await assert.rejects(
