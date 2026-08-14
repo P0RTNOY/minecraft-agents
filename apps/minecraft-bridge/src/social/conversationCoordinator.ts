@@ -165,6 +165,12 @@ export class ConversationCoordinator {
   private readonly pairCooldowns = new Map<string, number>()
   private readonly encounterCooldowns = new Map<string, number>()
   private readonly workers = new Set<Promise<unknown>>()
+  private readonly encounterWorkersByObserver = new Map<
+    string,
+    Set<Promise<unknown>>
+  >()
+  private readonly retiringParticipants = new Set<string>()
+  private readonly unregisters = new Map<string, Promise<void>>()
   private accepting = true
   private stopPromise: Promise<void> | null = null
   private conversationSequence = 0
@@ -212,15 +218,34 @@ export class ConversationCoordinator {
     this.participants.set(participant.agentId, participant)
   }
 
-  async unregisterParticipant(agentId: string): Promise<void> {
+  unregisterParticipant(agentId: string): Promise<void> {
+    const existing = this.unregisters.get(agentId)
+    if (existing) return existing
     const participant = this.participants.get(agentId)
-    if (!participant) return
+    if (!participant) return Promise.resolve()
+    this.retiringParticipants.add(agentId)
+    const unregistering = this.unregisterParticipantInternal(agentId, participant)
+      .finally(() => {
+        this.unregisters.delete(agentId)
+        this.retiringParticipants.delete(agentId)
+      })
+    this.unregisters.set(agentId, unregistering)
+    return unregistering
+  }
+
+  private async unregisterParticipantInternal(
+    agentId: string,
+    participant: ConversationParticipant
+  ): Promise<void> {
     const conversationId = this.sessionByAgent.get(agentId)
     const session = conversationId
       ? this.sessions.get(conversationId)
       : undefined
     if (session) await this.finish(session, 'shutdown')
-    this.participants.delete(agentId)
+    await this.waitForObserverIdle(agentId)
+    if (this.participants.get(agentId) === participant) {
+      this.participants.delete(agentId)
+    }
   }
 
   async startConversation(
@@ -230,6 +255,10 @@ export class ConversationCoordinator {
   ): Promise<StartConversationResult> {
     if (!this.enabled) return rejected('disabled')
     if (!this.accepting) return rejected('stopping')
+    if (
+      this.retiringParticipants.has(initiatorAgentId) ||
+      this.retiringParticipants.has(targetAgentId)
+    ) return rejected('unknown_agent')
     const initiator = this.participants.get(initiatorAgentId)
     const target = this.participants.get(targetAgentId)
     if (!initiator || !target) return rejected('unknown_agent')
@@ -314,9 +343,25 @@ export class ConversationCoordinator {
     if (!this.accepting) {
       return Promise.resolve({ recorded: false, conversation: null })
     }
+    if (
+      this.retiringParticipants.has(observerAgentId) ||
+      this.retiringParticipants.has(targetAgentId)
+    ) {
+      return Promise.resolve({ recorded: false, conversation: null })
+    }
     const worker = this.observeEncounterInternal(observerAgentId, targetAgentId)
-      .finally(() => this.workers.delete(worker))
+      .finally(() => {
+        this.workers.delete(worker)
+        const observerWorkers = this.encounterWorkersByObserver.get(observerAgentId)
+        observerWorkers?.delete(worker)
+        if (observerWorkers?.size === 0) {
+          this.encounterWorkersByObserver.delete(observerAgentId)
+        }
+      })
     this.workers.add(worker)
+    const observerWorkers = this.encounterWorkersByObserver.get(observerAgentId) ?? new Set()
+    observerWorkers.add(worker)
+    this.encounterWorkersByObserver.set(observerAgentId, observerWorkers)
     return worker
   }
 
@@ -350,7 +395,11 @@ export class ConversationCoordinator {
       metadata: {}
     })
     await observer.recordSocialEvent(event)
-    if (!this.accepting) return { recorded: true, conversation: null }
+    if (
+      !this.accepting ||
+      this.retiringParticipants.has(observerAgentId) ||
+      this.retiringParticipants.has(targetAgentId)
+    ) return { recorded: true, conversation: null }
     this.encounterCooldowns.set(key, now)
     const conversation = this.autoGreeting
       ? await this.startConversation(observerAgentId, targetAgentId, 'encounter')
@@ -390,6 +439,14 @@ export class ConversationCoordinator {
   async waitForIdle(): Promise<void> {
     while (this.workers.size > 0) {
       await Promise.allSettled([...this.workers])
+    }
+  }
+
+  private async waitForObserverIdle(agentId: string): Promise<void> {
+    while ((this.encounterWorkersByObserver.get(agentId)?.size ?? 0) > 0) {
+      await Promise.allSettled([
+        ...(this.encounterWorkersByObserver.get(agentId) ?? [])
+      ])
     }
   }
 

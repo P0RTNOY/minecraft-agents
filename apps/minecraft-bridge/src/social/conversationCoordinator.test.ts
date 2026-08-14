@@ -367,6 +367,44 @@ describe('ConversationCoordinator', () => {
     assert.equal(alice.generatedTurns.length, 0)
   })
 
+  it('drains only the unregistering observer encounter workers', async () => {
+    const releaseRecord = deferred<void>()
+    const recordStarted = deferred<void>()
+    const alice = participant('alice', {
+      record: async () => {
+        recordStarted.resolve()
+        await releaseRecord.promise
+      }
+    })
+    const bob = participant('bob')
+    const coordinator = coordinatorWith([alice, bob])
+    const encounter = coordinator.observeEncounter('alice', 'bob')
+    await recordStarted.promise
+
+    let bobUnregistered = false
+    const unregisterBob = coordinator.unregisterParticipant('bob').then(() => {
+      bobUnregistered = true
+    })
+    await turn()
+    assert.equal(bobUnregistered, true)
+
+    let aliceUnregistered = false
+    const unregisterAlice = coordinator.unregisterParticipant('alice').then(() => {
+      aliceUnregistered = true
+    })
+    await turn()
+    assert.equal(aliceUnregistered, false)
+
+    releaseRecord.resolve()
+    assert.deepEqual(await encounter, { recorded: true, conversation: null })
+    await Promise.all([unregisterBob, unregisterAlice])
+    assert.deepEqual(await coordinator.observeEncounter('alice', 'bob'), {
+      recorded: false,
+      conversation: null
+    })
+    await coordinator.close()
+  })
+
   it('prepare-stops all sessions and rejects late starts and outputs', async () => {
     const held = deferred<unknown>()
     const alice = participant('alice', { generate: async () => held.promise })

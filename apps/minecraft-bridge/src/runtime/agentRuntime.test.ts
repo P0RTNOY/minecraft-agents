@@ -217,6 +217,57 @@ describe('AgentRuntime', () => {
       setup.events.indexOf('bot:quit:agent runtime stopped')
     )
   })
+
+  it('drains this agent encounter work before a direct disconnect flushes resources', async () => {
+    const relationshipGetGate = deferred<void>()
+    const setup = harness(
+      { id: 'alice', username: 'Alice' },
+      0,
+      {
+        socialEnabled: true,
+        visibleExternalPlayers: ['Bob'],
+        relationshipGetGate: relationshipGetGate.promise
+      }
+    )
+    await setup.runtime.start()
+    setup.events.length = 0
+
+    setup.bot.emit('physicsTick')
+    await setup.encounterReadStarted.promise
+    let stopped = false
+    const stopping = setup.runtime.stop().then(() => { stopped = true })
+    await new Promise(resolve => setImmediate(resolve))
+
+    assert.equal(stopped, false)
+    assert.equal(setup.events.includes('relationship:flush'), false)
+    assert.equal(setup.events.includes('memory:flush'), false)
+    assert.equal(setup.events.includes('telemetry:flush'), false)
+    assert.equal(
+      setup.events.includes('bot:quit:agent runtime stopped'),
+      false
+    )
+
+    relationshipGetGate.resolve()
+    await stopping
+
+    assert.ok(
+      setup.events.indexOf('relationship:put') <
+      setup.events.indexOf('relationship:flush')
+    )
+    assert.ok(
+      setup.events.indexOf('memory:social') <
+      setup.events.indexOf('memory:flush')
+    )
+    assert.ok(
+      setup.events.indexOf('telemetry:social-event') <
+      setup.events.indexOf('telemetry:flush')
+    )
+    assert.ok(
+      setup.events.indexOf('telemetry:flush') <
+      setup.events.indexOf('bot:quit:agent runtime stopped')
+    )
+    assert.equal(setup.runtime.snapshot().phase, 'stopped')
+  })
 })
 
 function harness(
@@ -229,6 +280,8 @@ function harness(
     brainIdleGate?: Promise<void>
     commandProbe?: boolean
     socialEnabled?: boolean
+    visibleExternalPlayers?: readonly string[]
+    relationshipGetGate?: Promise<void>
   } = {}
 ) {
   const events: string[] = []
@@ -241,12 +294,18 @@ function harness(
   const provider: LLMProvider = {
     decide: async () => ({ action: 'idle', reason: 'Wait.' })
   }
+  const encounterReadStarted = deferred<void>()
   const relationshipStore = {
     open: async () => {},
     flush: async () => { events.push('relationship:flush') },
-    get: async () => null,
+    get: async () => {
+      events.push('relationship:get')
+      encounterReadStarted.resolve()
+      await options.relationshipGetGate
+      return null
+    },
     list: async () => [],
-    put: async () => {}
+    put: async () => { events.push('relationship:put') }
   }
   const configuredAgents: AgentDefinition[] = definition.id === 'alice'
     ? [definition, { id: 'bob', username: 'Bob' }]
@@ -265,6 +324,30 @@ function harness(
   const socialProvider: SocialProvider = {
     generate: async () => ({
       message: 'Hello.', intent: 'greet', continueConversation: false
+    })
+  }
+  if (coordinator && definition.id === 'alice' && options.relationshipGetGate) {
+    coordinator.registerParticipant({
+      agentId: 'bob',
+      username: 'Bob',
+      canSee: () => true,
+      isInDanger: () => false,
+      beginSocialSession: () => 0,
+      socialContext: async () => ({
+        relationship: {
+          familiarity: 0,
+          trust: 0,
+          affinity: 0,
+          reciprocity: 0,
+          interactionCount: 0
+        },
+        lastVerifiedInteraction: null,
+        recentMemory: []
+      }),
+      generateSocial: async () => ({}),
+      emitSocialMessage: () => false,
+      recordSocialEvent: async () => {},
+      endSocialSession: () => {}
     })
   }
   const services: AgentRuntimeServices = {
@@ -323,7 +406,9 @@ function harness(
         if (options.commandProbe) bot.off('test-command', onTestCommand)
       }
     },
-    observeVisibleExternalPlayers: () => ['ExternalPlayer'],
+    observeVisibleExternalPlayers: () => (
+      [...(options.visibleExternalPlayers ?? ['ExternalPlayer'])]
+    ),
     observePerception: () => ({
       agent: definition.username,
       timestamp: 1,
@@ -360,7 +445,16 @@ function harness(
     services,
     ...(coordinator ? { socialCoordinator: coordinator, configuredAgents } : {})
   })
-  return { runtime, events, scheduler, brain, reflex, bot }
+  return {
+    runtime,
+    events,
+    scheduler,
+    brain,
+    reflex,
+    bot,
+    coordinator,
+    encounterReadStarted
+  }
 }
 
 class LoopDouble implements RuntimeLoop {
@@ -426,7 +520,10 @@ function memoryDouble(events: string[]): AgentMemory {
       context: { recentEpisodes: [], relevantFacts: [] }
     }),
     record: async () => ({ episodesCreated: 0, semanticFactsCreated: 0 }),
-    recordSocial: async () => ({ episodesCreated: 0, semanticFactsCreated: 0 }),
+    recordSocial: async () => {
+      events.push('memory:social')
+      return { episodesCreated: 0, semanticFactsCreated: 0 }
+    },
     flush: async () => { events.push('memory:flush') },
     metrics: emptyMemoryMetrics
   }
@@ -440,7 +537,7 @@ function telemetryDouble(
     recordProviderCall() {},
     recordSocialProviderCall() {},
     recordConversationTelemetry() {},
-    recordSocialEvent() {},
+    recordSocialEvent: () => { events.push('telemetry:social-event') },
     recordSocialLoopRejection() {},
     recordSocialBudgetExhaustion() {},
     recordSpawn() {},
