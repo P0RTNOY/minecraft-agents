@@ -3,7 +3,11 @@ import {
   serializeBrainInput,
   systemInstructionFor
 } from '../decisionContract.js'
-import { abortError, composeCancellation } from '../cancellation.js'
+import {
+  abortError,
+  composeCancellation,
+  releaseUnusedResponseBody
+} from '../cancellation.js'
 import type { LLMProvider, LLMRequestTiming } from '../provider.js'
 import type { BrainInput } from '../types.js'
 
@@ -82,6 +86,7 @@ export class OpenAIProvider implements LLMProvider {
       }
 
       if (!response.ok) {
+        releaseUnusedResponseBody(response)
         throw new Error(`OpenAI request failed with HTTP ${response.status}.`)
       }
 

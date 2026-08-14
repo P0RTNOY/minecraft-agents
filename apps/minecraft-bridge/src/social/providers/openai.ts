@@ -1,4 +1,5 @@
 import type { LLMRequestTiming } from '../../brain/provider.js'
+import { releaseUnusedResponseBody } from '../../brain/cancellation.js'
 import {
   serializeSocialGenerationInput,
   socialSystemInstruction,
@@ -88,6 +89,7 @@ export class OpenAISocialProvider implements SocialProvider {
       }
 
       if (!response.ok) {
+        releaseUnusedResponseBody(response)
         throw new Error(`OpenAI social request failed with HTTP ${response.status}.`)
       }
 
@@ -120,9 +122,13 @@ async function readBoundedJson(response: Response, maximumBytes: number): Promis
   const declaredLength = response.headers.get('content-length')
   if (declaredLength !== null) {
     if (!/^\d+$/.test(declaredLength)) {
+      releaseUnusedResponseBody(response)
       throw new Error('OpenAI social provider returned an invalid content length.')
     }
-    if (Number(declaredLength) > maximumBytes) throw responseTooLargeError()
+    if (Number(declaredLength) > maximumBytes) {
+      releaseUnusedResponseBody(response)
+      throw responseTooLargeError()
+    }
   }
   if (!response.body) {
     throw new Error('OpenAI social provider returned an empty response envelope.')

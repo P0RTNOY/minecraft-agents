@@ -177,15 +177,15 @@ describe('OpenAISocialProvider', () => {
   })
 
   it('reports status-only failures and never exposes response bodies or keys', async () => {
-    const provider = providerReturning(
-      new Response('sensitive response test-api-key', { status: 429 })
-    )
+    const tracked = trackedPendingResponse(429)
+    const provider = providerReturning(tracked.response)
 
     await assert.rejects(provider.generate(generationInput), error => {
       assert.match(String(error), /HTTP 429/)
       assert.doesNotMatch(String(error), /sensitive|test-api-key/)
       return true
     })
+    assert.equal(tracked.cancelCalls(), 1)
   })
 
   it('bounds chunked response bytes before parsing the JSON envelope', async () => {
@@ -224,6 +224,7 @@ describe('OpenAISocialProvider', () => {
 
   it('rejects an oversized declared content length before consuming the body', async () => {
     let pulled = false
+    let cancelled = 0
     const valid = new TextEncoder().encode(JSON.stringify({
       status: 'completed',
       output: [{
@@ -245,12 +246,74 @@ describe('OpenAISocialProvider', () => {
       fetchImpl: async () => responseWithChunks(
         [valid],
         { 'content-length': '2048' },
-        { onRead: () => { pulled = true } }
+        {
+          onRead: () => { pulled = true },
+          onCancel: () => { cancelled += 1 }
+        }
       )
     })
 
     await assert.rejects(provider.generate(generationInput), /response is too large/i)
     assert.equal(pulled, false)
+    assert.equal(cancelled, 1)
+  })
+
+  it('releases an unread body after malformed declared content length', async () => {
+    const tracked = trackedPendingResponse(200, { 'content-length': 'invalid' })
+    const provider = providerReturning(tracked.response)
+
+    await assert.rejects(
+      provider.generate(generationInput),
+      /invalid JSON response envelope/i
+    )
+    assert.equal(tracked.cancelCalls(), 1)
+  })
+
+  it('preserves the original error when an unused body cannot be cancelled', async () => {
+    let cancelCalls = 0
+    const response = new Response(new ReadableStream<Uint8Array>({
+      cancel() {
+        cancelCalls += 1
+        throw new Error('transport cancellation detail')
+      }
+    }), { status: 503 })
+
+    await assert.rejects(providerReturning(response).generate(generationInput), error => {
+      assert.match(String(error), /HTTP 503/)
+      assert.doesNotMatch(String(error), /transport cancellation detail/)
+      return true
+    })
+    assert.equal(cancelCalls, 1)
+  })
+
+  it('handles absent and already-locked early response bodies safely', async () => {
+    const bodyless = {
+      ok: false,
+      status: 502,
+      headers: new Headers(),
+      body: null,
+      bodyUsed: false
+    } as unknown as Response
+    await assert.rejects(
+      providerReturning(bodyless).generate(generationInput),
+      /HTTP 502/
+    )
+
+    let cancelCalls = 0
+    const locked = new Response(new ReadableStream<Uint8Array>({
+      cancel() { cancelCalls += 1 }
+    }), { status: 502 })
+    const reader = locked.body?.getReader()
+    try {
+      await assert.rejects(
+        providerReturning(locked).generate(generationInput),
+        /HTTP 502/
+      )
+      assert.equal(cancelCalls, 0)
+    } finally {
+      reader?.releaseLock()
+      await locked.body?.cancel()
+    }
   })
 
   it('rejects refusals, incomplete envelopes, malformed JSON, and absent output safely', async () => {
@@ -320,6 +383,8 @@ function responseWithChunks(
     status: 200,
     headers: new Headers(headers),
     body: {
+      locked: false,
+      async cancel() { hooks.onCancel?.() },
       getReader() {
         return {
           async read() {
@@ -332,6 +397,17 @@ function responseWithChunks(
       }
     }
   } as unknown as Response
+}
+
+function trackedPendingResponse(
+  status: number,
+  headers: HeadersInit = {}
+): { response: Response; cancelCalls(): number } {
+  let calls = 0
+  const response = new Response(new ReadableStream<Uint8Array>({
+    cancel() { calls += 1 }
+  }), { status, headers })
+  return { response, cancelCalls: () => calls }
 }
 
 function sequenceClock(...values: number[]): () => number {

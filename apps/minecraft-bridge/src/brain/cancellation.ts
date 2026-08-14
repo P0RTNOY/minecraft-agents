@@ -54,3 +54,13 @@ export function abortError(message: string): Error {
   error.name = 'AbortError'
   return error
 }
+
+export function releaseUnusedResponseBody(response: Response): void {
+  const body = response.body
+  if (!body || response.bodyUsed || body.locked) return
+  try {
+    void body.cancel().catch(() => {})
+  } catch {
+    // Releasing a transport resource must not replace the provider error.
+  }
+}

@@ -47,6 +47,17 @@ describe('Brain provider cancellation', () => {
       })
       assert.equal(requestSignal.aborted, true)
     })
+
+    it(`releases an unread HTTP failure body from ${name}`, async () => {
+      let cancelCalls = 0
+      const response = new Response(new ReadableStream<Uint8Array>({
+        cancel() { cancelCalls += 1 }
+      }), { status: 503 })
+      const provider = createProvider(async () => response)
+
+      await assert.rejects(provider.decide(createBootstrapBrainInput()), /HTTP 503/)
+      assert.equal(cancelCalls, 1)
+    })
   }
 })
 
