@@ -3,6 +3,11 @@ import {
   serializeBrainInput,
   systemInstructionFor
 } from '../decisionContract.js'
+import {
+  abortError,
+  composeCancellation,
+  releaseUnusedResponseBody
+} from '../cancellation.js'
 import type { LLMProvider, LLMRequestTiming } from '../provider.js'
 import type { BrainInput } from '../types.js'
 
@@ -50,56 +55,73 @@ export class OllamaProvider implements LLMProvider {
     }
   }
 
-  async decide(input: BrainInput): Promise<unknown> {
+  async decide(input: BrainInput, signal?: AbortSignal): Promise<unknown> {
     this.lastTiming = null
-    const response = await this.fetchImpl(this.endpoint, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        model: this.model,
-        messages: [
-          {
-            role: 'system',
-            content: systemInstructionFor(input.state.agentName)
-          },
-          { role: 'user', content: JSON.stringify(serializeBrainInput(input)) }
-        ],
-        stream: false,
-        think: false,
-        keep_alive: '10m',
-        format: DECISION_JSON_SCHEMA,
-        options: {
-          temperature: 0.1,
-          num_predict: 128,
-          num_ctx: 4096
+    const cancellation = composeCancellation([signal], this.requestTimeoutMs)
+    try {
+      let response: Response
+      try {
+        response = await this.fetchImpl(this.endpoint, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            model: this.model,
+            messages: [
+              {
+                role: 'system',
+                content: systemInstructionFor(input.state.agentName)
+              },
+              { role: 'user', content: JSON.stringify(serializeBrainInput(input)) }
+            ],
+            stream: false,
+            think: false,
+            keep_alive: '10m',
+            format: DECISION_JSON_SCHEMA,
+            options: {
+              temperature: 0.1,
+              num_predict: 128,
+              num_ctx: 4096
+            }
+          }),
+          signal: cancellation.signal
+        })
+      } catch {
+        if (cancellation.signal.aborted) {
+          throw abortError('Ollama request was aborted.')
         }
-      }),
-      signal: AbortSignal.timeout(this.requestTimeoutMs)
-    })
+        throw new Error('Ollama request failed.')
+      }
 
-    if (!response.ok) {
-      throw new Error(`Ollama request failed with HTTP ${response.status}.`)
-    }
+      if (!response.ok) {
+        releaseUnusedResponseBody(response)
+        throw new Error(`Ollama request failed with HTTP ${response.status}.`)
+      }
 
-    let envelope: unknown
-    try {
-      envelope = await response.json()
-    } catch {
-      throw new Error('Ollama returned an invalid JSON response envelope.')
-    }
+      let envelope: unknown
+      try {
+        envelope = await response.json()
+      } catch {
+        if (cancellation.signal.aborted) {
+          throw abortError('Ollama request was aborted.')
+        }
+        throw new Error('Ollama returned an invalid JSON response envelope.')
+      }
 
-    const timing = readTiming(envelope)
-    this.lastTiming = timing ? normalizeTiming(timing) : null
-    if (this.debugTiming && timing) {
-      this.logger.log(formatTiming(timing))
-    }
+      const timing = readTiming(envelope)
+      this.lastTiming = timing ? normalizeTiming(timing) : null
+      if (this.debugTiming && timing) {
+        this.logger.log(formatTiming(timing))
+      }
 
-    const content = readMessageContent(envelope)
+      const content = readMessageContent(envelope)
 
-    try {
-      return JSON.parse(content) as unknown
-    } catch {
-      throw new Error('Ollama model response contained invalid JSON.')
+      try {
+        return JSON.parse(content) as unknown
+      } catch {
+        throw new Error('Ollama model response contained invalid JSON.')
+      }
+    } finally {
+      cancellation.dispose()
     }
   }
 

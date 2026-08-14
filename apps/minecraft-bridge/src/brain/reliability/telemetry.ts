@@ -381,12 +381,12 @@ export function instrumentProvider(
   now: () => number = Date.now
 ): LLMProvider {
   return {
-    async decide(input) {
+    async decide(input, signal) {
       const startedAt = now()
       let succeeded = false
       telemetry.recordMemoryRetrieval(input)
       try {
-        const output = await provider.decide(input)
+        const output = await provider.decide(input, signal)
         succeeded = true
         return output
       } finally {

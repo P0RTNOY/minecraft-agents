@@ -27,6 +27,7 @@ export type ChatCommand =
   | { type: 'scan' }
   | { type: 'inventory' }
   | { type: 'collect'; blockName: string }
+  | { type: 'talk'; targetAgentId: string }
 
 export interface ChatCommandLogger {
   log(message: string): void
@@ -36,7 +37,16 @@ export interface ChatCommandLogger {
 export interface RegisterChatCommandOptions {
   arbiter?: ActionArbiter
   isAuthorizedOperator?: (username: string) => boolean
+  isAuthorizedTalkOperator?: (username: string) => boolean
   logger?: ChatCommandLogger
+  startConversation?: (
+    targetAgentId: string
+  ) => Promise<{
+    accepted: boolean
+    reason?: string
+    conversationId?: string
+  }>
+  onManualActivity?: () => void
 }
 
 export function parseChatCommand(
@@ -63,6 +73,17 @@ export function parseChatCommand(
     return { type: 'collect', blockName: '' }
   }
 
+  if (command === `${commandPrefix} talk`) {
+    return { type: 'talk', targetAgentId: '' }
+  }
+
+  const talkMatch = command.match(
+    new RegExp(`^${escapeRegExp(commandPrefix)} talk ([a-z][a-z0-9_-]{0,31})$`)
+  )
+  if (talkMatch?.[1]) {
+    return { type: 'talk', targetAgentId: talkMatch[1] }
+  }
+
   const collectPrefix = `${commandPrefix} collect `
   if (command.startsWith(collectPrefix)) {
     return {
@@ -81,6 +102,9 @@ export function registerChatCommands(
 ): () => void {
   const arbiter = options.arbiter ?? new ActionArbiter()
   const isAuthorizedOperator = options.isAuthorizedOperator ?? (() => true)
+  const isAuthorizedTalkOperator = options.isAuthorizedTalkOperator ?? (
+    options.isAuthorizedOperator ?? (() => true)
+  )
   const logger = options.logger ?? console
   const onChat = (username: string, message: string) => {
     if (
@@ -90,9 +114,16 @@ export function registerChatCommands(
 
     const command = parseChatCommand(message, state.agentName)
     if (!command) return
+    if (command.type === 'talk' && !isAuthorizedTalkOperator(username)) return
     logger.log(`💬 ${username}: ${message}`)
 
     markManualOverride(state)
+    options.onManualActivity?.()
+
+    if (command.type === 'talk') {
+      void executeTalkCommand(bot, command, options.startConversation, logger)
+      return
+    }
 
     void arbiter.run({
       source: 'manual',
@@ -116,9 +147,58 @@ export function registerChatCommands(
   return () => bot.off('chat', onChat)
 }
 
+async function executeTalkCommand(
+  bot: Bot,
+  command: Extract<ChatCommand, { type: 'talk' }>,
+  startConversation: RegisterChatCommandOptions['startConversation'],
+  logger: ChatCommandLogger
+): Promise<void> {
+  if (!command.targetAgentId) {
+    bot.chat('Tell me which configured agent to talk to.')
+    return
+  }
+  if (!startConversation) {
+    bot.chat('Social conversations are disabled.')
+    return
+  }
+  try {
+    const result = await startConversation(command.targetAgentId)
+    if (!result.accepted) {
+      logger.log(`ℹ️ Conversation request rejected: ${result.reason ?? 'unavailable'}`)
+      bot.chat(`I can't talk to ${command.targetAgentId} right now.`)
+    }
+  } catch (error) {
+    logger.error(`❌ Conversation request failed: ${safeError(error)}`)
+    bot.chat(`I can't talk to ${command.targetAgentId} right now.`)
+  }
+}
+
 export function createOperatorAuthorizer(
   operatorUsernames: readonly string[],
   agentUsernames: readonly string[]
+): (username: string) => boolean {
+  return createOperatorAuthorizerWithPolicy(
+    operatorUsernames,
+    agentUsernames,
+    true
+  )
+}
+
+export function createTrustedOperatorAuthorizer(
+  operatorUsernames: readonly string[],
+  agentUsernames: readonly string[]
+): (username: string) => boolean {
+  return createOperatorAuthorizerWithPolicy(
+    operatorUsernames,
+    agentUsernames,
+    false
+  )
+}
+
+function createOperatorAuthorizerWithPolicy(
+  operatorUsernames: readonly string[],
+  agentUsernames: readonly string[],
+  allowExternalWhenUnconfigured: boolean
 ): (username: string) => boolean {
   const operators = normalizedNames(operatorUsernames)
   const agents = normalizedNames(agentUsernames)
@@ -126,7 +206,8 @@ export function createOperatorAuthorizer(
     if (!PLAYER_USERNAME.test(username)) return false
     const normalized = username.toLowerCase()
     return !agents.has(normalized) && (
-      operators.size === 0 || operators.has(normalized)
+      (allowExternalWhenUnconfigured && operators.size === 0) ||
+      operators.has(normalized)
     )
   }
 }
@@ -208,6 +289,10 @@ async function executeChatCommand(
         await collectBlock(bot, state, command.blockName),
         logger
       )
+      return
+
+    case 'talk':
+      return
   }
 }
 
@@ -256,4 +341,8 @@ function normalizedNames(values: readonly string[]): Set<string> {
 
 function safeError(error: unknown): string {
   return error instanceof Error ? error.message.slice(0, 200) : 'Unknown error.'
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }

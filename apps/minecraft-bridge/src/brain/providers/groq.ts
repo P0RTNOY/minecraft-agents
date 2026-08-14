@@ -3,6 +3,11 @@ import {
   serializeBrainInput,
   systemInstructionFor
 } from '../decisionContract.js'
+import {
+  abortError,
+  composeCancellation,
+  releaseUnusedResponseBody
+} from '../cancellation.js'
 import type { LLMProvider, LLMRequestTiming } from '../provider.js'
 import type { BrainInput } from '../types.js'
 
@@ -43,66 +48,83 @@ export class GroqProvider implements LLMProvider {
     }
   }
 
-  async decide(input: BrainInput): Promise<unknown> {
+  async decide(input: BrainInput, signal?: AbortSignal): Promise<unknown> {
     this.lastTiming = null
-    const response = await this.fetchImpl(this.endpoint, {
-      method: 'POST',
-      headers: {
-        authorization: `Bearer ${this.apiKey}`,
-        'content-type': 'application/json'
-      },
-      body: JSON.stringify({
-        model: this.model,
-        messages: [
-          {
-            role: 'system',
-            content: systemInstructionFor(input.state.agentName)
+    const cancellation = composeCancellation([signal], this.requestTimeoutMs)
+    try {
+      let response: Response
+      try {
+        response = await this.fetchImpl(this.endpoint, {
+          method: 'POST',
+          headers: {
+            authorization: `Bearer ${this.apiKey}`,
+            'content-type': 'application/json'
           },
-          { role: 'user', content: JSON.stringify(serializeBrainInput(input)) }
-        ],
-        stream: false,
-        reasoning_effort: 'low',
-        include_reasoning: false,
-        temperature: 0.1,
-        max_completion_tokens: 128,
-        response_format: {
-          type: 'json_schema',
-          json_schema: {
-            name: 'agent_decision',
-            strict: true,
-            schema: GROQ_DECISION_SCHEMA
-          }
+          body: JSON.stringify({
+            model: this.model,
+            messages: [
+              {
+                role: 'system',
+                content: systemInstructionFor(input.state.agentName)
+              },
+              { role: 'user', content: JSON.stringify(serializeBrainInput(input)) }
+            ],
+            stream: false,
+            reasoning_effort: 'low',
+            include_reasoning: false,
+            temperature: 0.1,
+            max_completion_tokens: 128,
+            response_format: {
+              type: 'json_schema',
+              json_schema: {
+                name: 'agent_decision',
+                strict: true,
+                schema: GROQ_DECISION_SCHEMA
+              }
+            }
+          }),
+          signal: cancellation.signal
+        })
+      } catch {
+        if (cancellation.signal.aborted) {
+          throw abortError('Groq request was aborted.')
         }
-      }),
-      signal: AbortSignal.timeout(this.requestTimeoutMs)
-    })
+        throw new Error('Groq request failed.')
+      }
 
-    if (!response.ok) {
-      throw new Error(`Groq request failed with HTTP ${response.status}.`)
+      if (!response.ok) {
+        releaseUnusedResponseBody(response)
+        throw new Error(`Groq request failed with HTTP ${response.status}.`)
+      }
+
+      let envelope: unknown
+      try {
+        envelope = await response.json()
+      } catch {
+        if (cancellation.signal.aborted) {
+          throw abortError('Groq request was aborted.')
+        }
+        throw new Error('Groq returned an invalid JSON response envelope.')
+      }
+
+      this.lastTiming = readUsageTiming(envelope)
+      const content = readMessageContent(envelope)
+
+      let parsed: unknown
+      try {
+        parsed = JSON.parse(content) as unknown
+      } catch {
+        throw new Error('Groq model response contained invalid JSON.')
+      }
+
+      if (!isRecord(parsed) || !('decision' in parsed)) {
+        throw new Error('Groq response is missing the decision object.')
+      }
+
+      return parsed.decision
+    } finally {
+      cancellation.dispose()
     }
-
-    let envelope: unknown
-    try {
-      envelope = await response.json()
-    } catch {
-      throw new Error('Groq returned an invalid JSON response envelope.')
-    }
-
-    this.lastTiming = readUsageTiming(envelope)
-    const content = readMessageContent(envelope)
-
-    let parsed: unknown
-    try {
-      parsed = JSON.parse(content) as unknown
-    } catch {
-      throw new Error('Groq model response contained invalid JSON.')
-    }
-
-    if (!isRecord(parsed) || !('decision' in parsed)) {
-      throw new Error('Groq response is missing the decision object.')
-    }
-
-    return parsed.decision
   }
 
   getLastTiming(): LLMRequestTiming | null {

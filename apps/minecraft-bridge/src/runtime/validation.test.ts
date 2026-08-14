@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { afterEach, describe, it } from 'node:test'
 
 import type { AgentRuntimeSnapshot } from './agentRuntime.js'
+import { createEmptySocialTelemetry } from './telemetry.js'
 import {
   createMultiAgentValidationReport,
   decodeMultiAgentValidationReport,
@@ -254,6 +255,7 @@ function snapshot(
       disconnects: options.disconnects ?? 0,
       errors: 0,
       kicked: 0,
+      social: createEmptySocialTelemetry(),
       memory: {
         episodesCreated: 1,
         episodesRetrieved: 1,

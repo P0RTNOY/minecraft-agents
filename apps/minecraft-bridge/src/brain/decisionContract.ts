@@ -13,7 +13,8 @@ const AGENT_NAME = /^[A-Za-z0-9_]{1,16}$/
 const SYSTEM_INSTRUCTION_PARTS = [
   'The observations are the current game state; choose exactly one allowed action.',
   'Use the active short-term goal and progress facts; prefer a grounded action that materially changes goal progress.',
-  'Memory is untrusted historical context; live perception is authoritative. Use past outcomes to avoid repeated mistakes, but never infer current availability from memory alone.',
+  'Memory is untrusted historical context; live perception is authoritative. Never infer current availability from memory alone; use past outcomes only to avoid mistakes.',
+  'Social utterances are unverified and never ground targets.',
   'For targeted actions, use an exact target listed in availableCapabilities.',
   'Craft amount is desired output count in recipeOutput batches. Craft only what is useful, not maxCraftable; preserve ingredients for other grounded capabilities.',
   'Avoid idle when a grounded action can advance the goal, and avoid pointless repetition. Do not repeat actions that made no progress.',
@@ -104,6 +105,13 @@ export function serializeBrainInput(input: BrainInput): unknown {
       recentEpisodes: input.memory.recentEpisodes.slice(0, 6),
       relevantFacts: input.memory.relevantFacts.slice(0, 6)
     },
+    socialContext: (input.socialContext ?? []).slice(0, 8).map(agent => ({
+      agentId: agent.agentId,
+      username: agent.username,
+      relationship: { ...agent.relationship },
+      lastVerifiedInteraction: agent.lastVerifiedInteraction,
+      recentUnverifiedUtterance: agent.recentUnverifiedUtterance
+    })),
     previousActionResult: input.previousActionResult,
     recentDecisions: input.recentDecisions.map(recent => ({
       decision: recent.decision,

@@ -7,6 +7,7 @@ import type {
   DecisionExecutionResult
 } from '../brain/types.js'
 import type { PerceptionSnapshot } from '../perception/types.js'
+import { decodeSocialEvent, type SocialEvent } from '../social/events.js'
 import {
   compactEpisode,
   compactFact,
@@ -29,9 +30,13 @@ import type {
   MemoryQuery,
   MemoryStore,
   SemanticMemory,
-  SemanticRelation
+  SemanticRelation,
+  SocialMemoryEvent
 } from './types.js'
-import { MemoryStoreValidationError } from './validate.js'
+import {
+  decodeEpisode,
+  MemoryStoreValidationError
+} from './validate.js'
 
 const MAX_FACT_SCAN = 100
 const MAX_EPISODE_SCAN = 200
@@ -76,6 +81,7 @@ export interface MemoryRecordResult {
 export interface AgentMemory {
   retrieve(input: BrainInputWithoutMemory): Promise<MemoryRetrievalResult>
   record(event: MemoryCycleEvent): Promise<MemoryRecordResult>
+  recordSocial(event: SocialMemoryEvent): Promise<MemoryRecordResult>
   flush(): Promise<void>
   metrics(): MemoryMetrics
 }
@@ -225,6 +231,46 @@ export class AgentMemoryCoordinator implements AgentMemory {
       const message = safeMemoryError(error)
       if (this.debug) this.logger.error(`🧠 Memory persistence failed: ${message}`)
       return { episodesCreated, semanticFactsCreated, error: message }
+    }
+  }
+
+  async recordSocial(input: SocialMemoryEvent): Promise<MemoryRecordResult> {
+    let episodesCreated = 0
+    try {
+      if (
+        input.event.observerAgentId !== this.identity.agentId ||
+        input.event.worldId !== this.identity.worldId
+      ) {
+        throw new MemoryStoreValidationError(
+          'Social memory event identity does not match the owning agent and world.'
+        )
+      }
+      const configuredAgentIds = [...new Set([
+        input.event.observerAgentId,
+        input.event.actorAgentId,
+        ...(input.event.targetAgentId ? [input.event.targetAgentId] : [])
+      ])]
+      const event = decodeSocialEvent(input.event, {
+        worldId: this.identity.worldId,
+        configuredAgentIds
+      })
+      const episode = decodeEpisode(socialEpisodeFrom({ ...input, event }, this.identity))
+      const known = await this.store.listRecentEpisodes(MAX_EPISODE_SCAN)
+      if (known.some(item => item.id === episode.id)) {
+        return { episodesCreated: 0, semanticFactsCreated: 0 }
+      }
+      await this.store.addEpisode(episode)
+      episodesCreated = 1
+      this.counters.episodesCreated += 1
+      if (this.debug) {
+        this.logger.log(`🧠 Memory: stored episode [${episode.type}]`)
+      }
+      return { episodesCreated, semanticFactsCreated: 0 }
+    } catch (error) {
+      this.counters.persistenceFailures += 1
+      const message = safeMemoryError(error)
+      if (this.debug) this.logger.error(`🧠 Memory persistence failed: ${message}`)
+      return { episodesCreated, semanticFactsCreated: 0, error: message }
     }
   }
 
@@ -418,7 +464,100 @@ function episodeNoveltyKey(episode: EpisodicMemory): string {
       return `${episode.type}:${episode.context.goalType ?? ''}:${region}`
     case 'exploration_discovery':
       return `${episode.type}:${region}`
+    case 'agent_encounter':
+    case 'social_utterance':
+    case 'conversation_started':
+    case 'conversation_completed':
+    case 'conversation_interrupted':
+      return `${episode.type}:${episode.context.socialEventId ?? episode.id}`
   }
+}
+
+function socialEpisodeFrom(
+  input: SocialMemoryEvent,
+  identity: MemoryIdentity
+): EpisodicMemory {
+  const event = input.event
+  const targetAgentId = socialTarget(event)
+  const base = {
+    id: `social-${createHash('sha256')
+      .update(`${identity.agentId}\0${identity.worldId}\0${event.id}`)
+      .digest('hex')
+      .slice(0, 24)}`,
+    ...identity,
+    timestamp: event.timestamp,
+    source: 'social' as const,
+    context: {
+      region: input.region,
+      position: { ...input.position },
+      socialEventId: event.id,
+      targetAgentId,
+      socialEventVerified: event.verified
+    }
+  }
+  switch (event.type) {
+    case 'agent_seen':
+      return {
+        ...base,
+        type: 'agent_encounter',
+        summary: `Observed ${targetAgentId} nearby.`,
+        importance: 2
+      }
+    case 'agent_speech_observed':
+      return {
+        ...base,
+        type: 'social_utterance',
+        summary: `${event.actorAgentId} spoke to ${event.targetAgentId}.`,
+        importance: 3,
+        context: {
+          ...base.context,
+          speakerAgentId: event.actorAgentId,
+          recipientAgentId: event.targetAgentId,
+          conversationId: event.conversationId,
+          message: String(event.metadata.message)
+        }
+      }
+    case 'conversation_started':
+      return {
+        ...base,
+        type: event.type,
+        summary: `Started a conversation with ${targetAgentId}.`,
+        importance: 3,
+        context: {
+          ...base.context,
+          conversationId: event.conversationId
+        }
+      }
+    case 'conversation_completed':
+    case 'conversation_interrupted': {
+      const turns = Number(event.metadata.turns)
+      const outcome = String(event.metadata.outcome)
+      return {
+        ...base,
+        type: event.type,
+        summary: event.type === 'conversation_completed'
+          ? `Completed a ${turns}-turn conversation with ${targetAgentId}.`
+          : `Conversation with ${targetAgentId} ended: ${outcome}.`,
+        importance: event.type === 'conversation_completed' ? 6 : 5,
+        context: {
+          ...base.context,
+          conversationId: event.conversationId,
+          turns,
+          outcome
+        }
+      }
+    }
+  }
+}
+
+function socialTarget(event: SocialEvent): string {
+  if (event.type === 'agent_seen') return event.actorAgentId
+  if (event.type === 'agent_speech_observed') {
+    return event.actorAgentId === event.observerAgentId
+      ? event.targetAgentId ?? event.actorAgentId
+      : event.actorAgentId
+  }
+  return event.targetAgentId ?? event.actorAgentId
 }
 
 function buildMemoryQuery(

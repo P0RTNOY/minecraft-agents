@@ -25,7 +25,15 @@ describe('loadBrainConfig', () => {
       memoryFactLimit: 4,
       debugMemory: false,
       memoryReflection: false,
-      memoryReflectionModel: 'gpt-5-mini'
+      memoryReflectionModel: 'gpt-5-mini',
+      socialEnabled: false,
+      socialAutoGreeting: false,
+      socialModel: 'gpt-5-mini',
+      socialMaxTurns: 4,
+      socialCooldownMs: 60_000,
+      socialTurnTimeoutMs: 15_000,
+      socialMaxMessageChars: 180,
+      socialDirectory: 'data/social'
     })
   })
 
@@ -50,7 +58,15 @@ describe('loadBrainConfig', () => {
       AGENT_MEMORY_FACT_LIMIT: '1',
       AGENT_DEBUG_MEMORY: 'true',
       AGENT_MEMORY_REFLECTION: 'true',
-      AGENT_MEMORY_REFLECTION_MODEL: 'gpt-5-mini-test'
+      AGENT_MEMORY_REFLECTION_MODEL: 'gpt-5-mini-test',
+      AGENT_SOCIAL_ENABLED: 'true',
+      AGENT_SOCIAL_AUTO_GREETING: 'true',
+      AGENT_SOCIAL_MODEL: 'gpt-5-mini-test',
+      AGENT_SOCIAL_MAX_TURNS: '8',
+      AGENT_SOCIAL_COOLDOWN_MS: '1000',
+      AGENT_SOCIAL_TURN_TIMEOUT_MS: '60000',
+      AGENT_SOCIAL_MAX_MESSAGE_CHARS: '256',
+      AGENT_SOCIAL_DIR: '/tmp/minecraft-agent-social'
     }), {
       autonomous: true,
       tickIntervalMs: 8000,
@@ -71,7 +87,15 @@ describe('loadBrainConfig', () => {
       memoryFactLimit: 1,
       debugMemory: true,
       memoryReflection: true,
-      memoryReflectionModel: 'gpt-5-mini-test'
+      memoryReflectionModel: 'gpt-5-mini-test',
+      socialEnabled: true,
+      socialAutoGreeting: true,
+      socialModel: 'gpt-5-mini-test',
+      socialMaxTurns: 8,
+      socialCooldownMs: 1000,
+      socialTurnTimeoutMs: 60_000,
+      socialMaxMessageChars: 256,
+      socialDirectory: '/tmp/minecraft-agent-social'
     })
   })
 
@@ -161,6 +185,48 @@ describe('loadBrainConfig', () => {
         AGENT_MEMORY_REFLECTION: 'true'
       }),
       /OPENAI_API_KEY is required when memory reflection is enabled/
+    )
+    assert.throws(
+      () => loadBrainConfig({ AGENT_SOCIAL_ENABLED: 'yes' }),
+      /AGENT_SOCIAL_ENABLED must be either true or false/
+    )
+    assert.throws(
+      () => loadBrainConfig({ AGENT_SOCIAL_AUTO_GREETING: 'yes' }),
+      /AGENT_SOCIAL_AUTO_GREETING must be either true or false/
+    )
+    assert.throws(
+      () => loadBrainConfig({ AGENT_SOCIAL_MAX_TURNS: '0' }),
+      /AGENT_SOCIAL_MAX_TURNS must be at least 1/
+    )
+    assert.throws(
+      () => loadBrainConfig({ AGENT_SOCIAL_MAX_TURNS: '9' }),
+      /AGENT_SOCIAL_MAX_TURNS must be at most 8/
+    )
+    assert.throws(
+      () => loadBrainConfig({ AGENT_SOCIAL_COOLDOWN_MS: '999' }),
+      /AGENT_SOCIAL_COOLDOWN_MS must be at least 1000/
+    )
+    assert.throws(
+      () => loadBrainConfig({ AGENT_SOCIAL_TURN_TIMEOUT_MS: '60001' }),
+      /AGENT_SOCIAL_TURN_TIMEOUT_MS must be at most 60000/
+    )
+    assert.throws(
+      () => loadBrainConfig({ AGENT_SOCIAL_MAX_MESSAGE_CHARS: '31' }),
+      /AGENT_SOCIAL_MAX_MESSAGE_CHARS must be at least 32/
+    )
+    assert.throws(
+      () => loadBrainConfig({ AGENT_SOCIAL_MODEL: '../unsafe-model' }),
+      /AGENT_SOCIAL_MODEL is invalid/
+    )
+    assert.throws(
+      () => loadBrainConfig({ AGENT_SOCIAL_DIR: 'bad\u0000path' }),
+      /AGENT_SOCIAL_DIR is invalid/
+    )
+    assert.throws(
+      () => loadBrainConfig({
+        AGENT_SOCIAL_ENABLED: 'true'
+      }),
+      /OPENAI_API_KEY is required when social behavior is enabled/
     )
   })
 })

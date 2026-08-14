@@ -241,6 +241,38 @@ describe('MemoryReflector', () => {
     assert.equal(store.facts.length, 1)
   })
 
+  it('never sends social episodes to reflection or lets them trigger a batch', async () => {
+    const store = new StoreDouble()
+    store.episodes = Array.from({ length: 6 }, (_, index) => episode({
+      id: `social-${index}`,
+      type: 'conversation_completed',
+      source: 'social',
+      importance: 10,
+      timestamp: 1_000 + index,
+      context: {
+        region: '0:0',
+        socialEventId: `event-${index}`,
+        targetAgentId: 'bob',
+        conversationId: `conversation-${index}`,
+        socialEventVerified: true,
+        turns: 4,
+        outcome: 'completed'
+      }
+    }))
+    let calls = 0
+    const reflector = new MemoryReflector({
+      store,
+      provider: provider(async () => {
+        calls += 1
+        return { candidates: { candidates: [] }, timing: null }
+      }),
+      now: () => 20_000
+    })
+
+    assert.equal((await reflector.consider()).attempted, false)
+    assert.equal(calls, 0)
+  })
+
   it('retains unprocessed episodes and rate-limits a failed provider', async () => {
     const store = new StoreDouble()
     store.episodes = Array.from({ length: 5 }, (_, index) => episode({

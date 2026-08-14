@@ -92,8 +92,10 @@ export class MemoryReflector {
 
       const recent = await this.store.listRecentEpisodes(MAX_EPISODE_SCAN)
       const unreflected = recent.filter(episode => (
-        cursor.lastReflectedEpisodeTimestamp === null ||
-        episode.timestamp > cursor.lastReflectedEpisodeTimestamp
+        episode.source !== 'social' && (
+          cursor.lastReflectedEpisodeTimestamp === null ||
+          episode.timestamp > cursor.lastReflectedEpisodeTimestamp
+        )
       ))
       const importantCount = unreflected.filter(
         episode => episode.importance >= MIN_IMPORTANCE

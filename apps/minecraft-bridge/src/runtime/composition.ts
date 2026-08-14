@@ -9,12 +9,20 @@ import { createLLMProvider } from '../brain/providers/index.js'
 import { visibleExternalPlayers } from '../brain/semantics.js'
 import {
   createOperatorAuthorizer,
+  createTrustedOperatorAuthorizer,
   registerChatCommands
 } from '../commands/chatCommands.js'
 import { MemoryReflector } from '../memory/reflection.js'
 import { OpenAIReflectionProvider } from '../memory/providers/openaiReflection.js'
 import { createDefaultDecisionExecutor } from '../skills/execute.js'
 import { perceive } from '../perception/perceive.js'
+import { ConversationCoordinator } from '../social/conversationCoordinator.js'
+import { OpenAISocialProvider } from '../social/providers/openai.js'
+import {
+  AtomicJsonRelationshipStore,
+  relationshipFilePath
+} from '../social/relationshipStore.js'
+import { AgentRelationshipService } from '../social/relationships.js'
 import { ReflexLoop } from '../survival/reflexLoop.js'
 import { AgentManager } from './agentManager.js'
 import { AgentRuntime } from './agentRuntime.js'
@@ -30,7 +38,8 @@ import type {
 } from './services.js'
 import {
   AgentRuntimeTelemetry,
-  instrumentAgentProvider
+  instrumentAgentProvider,
+  instrumentSocialProvider
 } from './telemetry.js'
 
 type Environment = Readonly<Record<string, string | undefined>>
@@ -53,7 +62,26 @@ export async function createProductionComposition(
   const memoryDirectory = isAbsolute(brainConfig.memoryDirectory)
     ? brainConfig.memoryDirectory
     : resolve(appDirectory, brainConfig.memoryDirectory)
+  const socialDirectory = isAbsolute(brainConfig.socialDirectory)
+    ? brainConfig.socialDirectory
+    : resolve(appDirectory, brainConfig.socialDirectory)
+  const coordinator = brainConfig.socialEnabled
+    ? new ConversationCoordinator({
+        enabled: true,
+        worldId: brainConfig.memoryWorldId,
+        autoGreeting: brainConfig.socialAutoGreeting,
+        maxTurns: brainConfig.socialMaxTurns,
+        cooldownMs: brainConfig.socialCooldownMs,
+        turnTimeoutMs: brainConfig.socialTurnTimeoutMs,
+        maxMessageCharacters: brainConfig.socialMaxMessageChars,
+        logger: console
+      })
+    : null
   const isAuthorizedOperator = createOperatorAuthorizer(
+    agentConfiguration.operatorUsernames,
+    agentConfiguration.configuredAgentUsernames
+  )
+  const isAuthorizedTalkOperator = createTrustedOperatorAuthorizer(
     agentConfiguration.operatorUsernames,
     agentConfiguration.configuredAgentUsernames
   )
@@ -84,6 +112,43 @@ export async function createProductionComposition(
       context.telemetry,
       context.signal
     ),
+    ...(coordinator ? {
+        createSocialResources: async (context) => {
+          const targets = context.configuredAgentIds.filter(
+            agentId => agentId !== context.identity.agentId
+          )
+          const identity = {
+            observerAgentId: context.identity.agentId,
+            worldId: context.config.memoryWorldId
+          }
+          const relationshipStore = new AtomicJsonRelationshipStore({
+            filePath: relationshipFilePath(socialDirectory, identity),
+            identity,
+            configuredTargetAgentIds: targets
+          })
+          await relationshipStore.open()
+          return {
+            relationshipStore,
+            relationships: new AgentRelationshipService({
+              identity,
+              configuredTargetAgentIds: targets,
+              store: relationshipStore,
+              encounterCooldownMs: context.config.socialCooldownMs
+            }),
+            provider: instrumentSocialProvider(
+              new OpenAISocialProvider({
+                baseUrl: context.config.openaiBaseUrl,
+                apiKey: context.config.openaiApiKey,
+                model: context.config.socialModel,
+                requestTimeoutMs: context.config.socialTurnTimeoutMs
+              }),
+              limiter,
+              context.telemetry,
+              context.signal
+            )
+          }
+        }
+      } : {}),
     createBot: connection => {
       const bot = mineflayer.createBot({
         ...connection,
@@ -98,6 +163,8 @@ export async function createProductionComposition(
       arbiter: context.arbiter,
       provider: context.provider,
       memory: context.memory ?? undefined,
+      cognitiveGate: context.cognitiveGate,
+      socialContext: context.socialContext,
       intervalMs: context.config.tickIntervalMs,
       execute: createDefaultDecisionExecutor({
         explorationRadius: context.config.explorationRadius
@@ -109,6 +176,7 @@ export async function createProductionComposition(
       state: context.state,
       arbiter: context.arbiter,
       intervalMs: context.config.reflexIntervalMs,
+      onReflexDecision: context.onReflexDecision,
       logger: context.logger
     }),
     registerCommands: context => registerChatCommands(
@@ -117,6 +185,9 @@ export async function createProductionComposition(
       {
         arbiter: context.arbiter,
         isAuthorizedOperator,
+        isAuthorizedTalkOperator,
+        startConversation: context.startConversation,
+        onManualActivity: context.onManualActivity,
         logger: context.logger
       }
     ),
@@ -124,6 +195,7 @@ export async function createProductionComposition(
       perceive(bot),
       state.agentName
     ).map(player => player.username),
+    observePerception: perceive,
     cancelAction: cancelAgentAction,
     createTelemetry: identity => new AgentRuntimeTelemetry(identity),
     scheduler: nodeScheduler,
@@ -137,9 +209,20 @@ export async function createProductionComposition(
       brainConfig,
       minecraft: agentConfiguration.minecraft,
       brainStartDelayMs: index * agentConfiguration.brainStaggerMs,
-      services
+      services,
+      ...(coordinator ? {
+          socialCoordinator: coordinator,
+          configuredAgents: agentConfiguration.agents
+        } : {})
     }),
-    closeShared: () => limiter.close()
+    prepareSharedStop: () => coordinator?.prepareStop(),
+    closeShared: async () => {
+      try {
+        await coordinator?.close()
+      } finally {
+        limiter.close()
+      }
+    }
   })
   return { manager, agentConfiguration, brainConfig }
 }

@@ -5,6 +5,7 @@ import type {
 } from '../agent/state.js'
 import type { PerceptionSnapshot } from '../perception/types.js'
 import type { MemoryContext } from '../memory/types.js'
+import type { VisibleAgentSocialContext } from '../social/context.js'
 import type {
   AvailableCapabilities,
   GoalProgress,
@@ -61,4 +62,5 @@ export interface BrainInput {
   goalProgress: GoalProgress | null
   availableCapabilities: AvailableCapabilities
   memory: MemoryContext
+  socialContext?: readonly VisibleAgentSocialContext[]
 }

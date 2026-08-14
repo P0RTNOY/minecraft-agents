@@ -19,6 +19,14 @@ export interface BrainConfig {
   debugMemory: boolean
   memoryReflection: boolean
   memoryReflectionModel: string
+  socialEnabled: boolean
+  socialAutoGreeting: boolean
+  socialModel: string
+  socialMaxTurns: number
+  socialCooldownMs: number
+  socialTurnTimeoutMs: number
+  socialMaxMessageChars: number
+  socialDirectory: string
 }
 
 type Environment = Readonly<Record<string, string | undefined>>
@@ -107,6 +115,48 @@ export function loadBrainConfig(
   const memoryReflectionModel = environment.AGENT_MEMORY_REFLECTION_MODEL === undefined
     ? 'gpt-5-mini'
     : environment.AGENT_MEMORY_REFLECTION_MODEL.trim()
+  const socialEnabled = parseBoolean(
+    environment.AGENT_SOCIAL_ENABLED,
+    'AGENT_SOCIAL_ENABLED',
+    false
+  )
+  const socialAutoGreeting = parseBoolean(
+    environment.AGENT_SOCIAL_AUTO_GREETING,
+    'AGENT_SOCIAL_AUTO_GREETING',
+    false
+  )
+  const socialModel = environment.AGENT_SOCIAL_MODEL === undefined
+    ? 'gpt-5-mini'
+    : environment.AGENT_SOCIAL_MODEL.trim()
+  const socialMaxTurns = parseInterval(
+    environment.AGENT_SOCIAL_MAX_TURNS,
+    'AGENT_SOCIAL_MAX_TURNS',
+    4,
+    1,
+    8
+  )
+  const socialCooldownMs = parseInterval(
+    environment.AGENT_SOCIAL_COOLDOWN_MS,
+    'AGENT_SOCIAL_COOLDOWN_MS',
+    60_000,
+    1000,
+    3_600_000
+  )
+  const socialTurnTimeoutMs = parseInterval(
+    environment.AGENT_SOCIAL_TURN_TIMEOUT_MS,
+    'AGENT_SOCIAL_TURN_TIMEOUT_MS',
+    15_000,
+    1000,
+    60_000
+  )
+  const socialMaxMessageChars = parseInterval(
+    environment.AGENT_SOCIAL_MAX_MESSAGE_CHARS,
+    'AGENT_SOCIAL_MAX_MESSAGE_CHARS',
+    180,
+    32,
+    256
+  )
+  const socialDirectory = environment.AGENT_SOCIAL_DIR?.trim() || 'data/social'
   const model = environment.LLM_MODEL?.trim() ?? ''
   const provider = environment.LLM_PROVIDER?.trim().toLowerCase() || 'ollama'
   const groqApiKey = environment.GROQ_API_KEY?.trim() ?? ''
@@ -133,6 +183,21 @@ export function loadBrainConfig(
   if (memoryReflection && openaiApiKey.length === 0) {
     throw new Error(
       'OPENAI_API_KEY is required when memory reflection is enabled.'
+    )
+  }
+  if (!MEMORY_MODEL.test(socialModel)) {
+    throw new Error('AGENT_SOCIAL_MODEL is invalid.')
+  }
+  if (
+    socialDirectory.length === 0 ||
+    socialDirectory.length > 512 ||
+    /[\u0000-\u001F\u007F]/.test(socialDirectory)
+  ) {
+    throw new Error('AGENT_SOCIAL_DIR is invalid.')
+  }
+  if (socialEnabled && openaiApiKey.length === 0) {
+    throw new Error(
+      'OPENAI_API_KEY is required when social behavior is enabled.'
     )
   }
 
@@ -173,7 +238,15 @@ export function loadBrainConfig(
     memoryFactLimit,
     debugMemory,
     memoryReflection,
-    memoryReflectionModel
+    memoryReflectionModel,
+    socialEnabled,
+    socialAutoGreeting,
+    socialModel,
+    socialMaxTurns,
+    socialCooldownMs,
+    socialTurnTimeoutMs,
+    socialMaxMessageChars,
+    socialDirectory
   }
 }
 

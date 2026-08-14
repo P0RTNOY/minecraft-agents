@@ -11,6 +11,11 @@ export type EpisodeType =
   | 'player_interaction'
   | 'goal_milestone'
   | 'exploration_discovery'
+  | 'agent_encounter'
+  | 'social_utterance'
+  | 'conversation_started'
+  | 'conversation_completed'
+  | 'conversation_interrupted'
 
 export type EpisodeSource =
   | 'perception'
@@ -18,6 +23,7 @@ export type EpisodeSource =
   | 'goal'
   | 'reflex'
   | 'player'
+  | 'social'
 
 export type SemanticRelation =
   | 'resource_observed_near'
@@ -47,6 +53,14 @@ export interface EpisodeContext {
   target?: string
   outcome?: string
   goalType?: string
+  socialEventId?: string
+  targetAgentId?: string
+  speakerAgentId?: string
+  recipientAgentId?: string
+  conversationId?: string
+  message?: string
+  socialEventVerified?: boolean
+  turns?: number
 }
 
 export interface EpisodicMemory extends MemoryIdentity {
@@ -116,6 +130,12 @@ export interface CompactFact {
 export interface MemoryContext {
   recentEpisodes: readonly CompactEpisode[]
   relevantFacts: readonly CompactFact[]
+}
+
+export interface SocialMemoryEvent {
+  event: import('../social/events.js').SocialEvent
+  position: MemoryPosition
+  region: string
 }
 
 export interface MemoryDocumentV1 {

@@ -44,6 +44,22 @@ describe('ReflexLoop', () => {
     ])
   })
 
+  it('invalidates deliberate cognition before urgent reflex execution', async () => {
+    const events: string[] = []
+    const loop = createLoop({
+      observe: () => snapshot({ food: 4, edibleItemCount: 1 }),
+      onReflexDecision: () => events.push('invalidate'),
+      execute: async () => {
+        events.push('execute')
+        return completedEatResult()
+      }
+    })
+
+    await loop.runCycle()
+
+    assert.deepEqual(events, ['invalidate', 'execute'])
+  })
+
   it('does not let a reflex override an active manual action', async () => {
     const state = createAgentState('Alice')
     beginAgentAction(state, 'following', 'follow_player', 'Follow Steve')
