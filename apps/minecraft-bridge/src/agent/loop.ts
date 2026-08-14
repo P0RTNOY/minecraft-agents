@@ -178,6 +178,7 @@ export class AutonomousAgentLoop {
     const lifecycleGeneration = this.lifecycleGeneration
     const manualOverrideVersion = this.state.manualOverrideVersion
     const actionGeneration = this.arbiter.captureGeneration()
+    const cognitiveGeneration = this.cognitiveGate?.snapshot().generation ?? null
     this.logger.log('🧠 Brain cycle')
 
     try {
@@ -208,13 +209,21 @@ export class AutonomousAgentLoop {
         availableCapabilities: goalSnapshot.availableCapabilities
       }
       const memory = await this.retrieveMemory(inputWithoutMemory)
-      if (lifecycleGeneration !== this.lifecycleGeneration) {
-        return { status: 'skipped', reason: 'loop_stopped' }
-      }
+      const afterMemory = this.preProviderInvalidation(
+        lifecycleGeneration,
+        manualOverrideVersion,
+        actionGeneration,
+        cognitiveGeneration
+      )
+      if (afterMemory) return afterMemory
       const socialContext = await this.retrieveSocialContext(perception)
-      if (lifecycleGeneration !== this.lifecycleGeneration) {
-        return { status: 'skipped', reason: 'loop_stopped' }
-      }
+      const afterSocialContext = this.preProviderInvalidation(
+        lifecycleGeneration,
+        manualOverrideVersion,
+        actionGeneration,
+        cognitiveGeneration
+      )
+      if (afterSocialContext) return afterSocialContext
       const input: BrainInput = {
         ...inputWithoutMemory,
         memory,
@@ -239,6 +248,13 @@ export class AutonomousAgentLoop {
 
       let providerOutput: unknown
       try {
+        const beforeProvider = this.preProviderInvalidation(
+          lifecycleGeneration,
+          manualOverrideVersion,
+          actionGeneration,
+          cognitiveGeneration
+        )
+        if (beforeProvider) return beforeProvider
         if (this.cognitiveGate) {
           const cognition = await this.cognitiveGate.runBrain(
             signal => this.provider.decide(input, signal)
@@ -374,6 +390,30 @@ export class AutonomousAgentLoop {
       this.logger.error('❌ Memory retrieval failed.')
       return EMPTY_MEMORY_CONTEXT
     }
+  }
+
+  private preProviderInvalidation(
+    lifecycleGeneration: number,
+    manualOverrideVersion: number,
+    actionGeneration: number,
+    cognitiveGeneration: number | null
+  ): Extract<BrainCycleResult, { status: 'skipped' }> | null {
+    if (lifecycleGeneration !== this.lifecycleGeneration) {
+      return { status: 'skipped', reason: 'loop_stopped' }
+    }
+    if (manualOverrideVersion !== this.state.manualOverrideVersion) {
+      return { status: 'skipped', reason: 'manual_override' }
+    }
+    if (actionGeneration !== this.arbiter.captureGeneration()) {
+      return { status: 'skipped', reason: 'priority_override' }
+    }
+    if (
+      cognitiveGeneration !== null &&
+      cognitiveGeneration !== this.cognitiveGate?.snapshot().generation
+    ) {
+      return { status: 'skipped', reason: 'stale_cognition' }
+    }
+    return null
   }
 
   private async retrieveSocialContext(

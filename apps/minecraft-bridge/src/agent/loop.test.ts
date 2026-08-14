@@ -11,6 +11,11 @@ import { ActionArbiter } from './actionArbiter.js'
 import type { AgentDecision, BrainInput } from '../brain/types.js'
 import type { LLMProvider } from '../brain/provider.js'
 import { CognitiveGate } from '../social/cognitiveGate.js'
+import { ProviderConcurrencyLimiter } from '../runtime/providerLimiter.js'
+import {
+  AgentRuntimeTelemetry,
+  instrumentAgentProvider
+} from '../runtime/telemetry.js'
 import {
   AutonomousAgentLoop,
   type AgentLoopOptions
@@ -76,6 +81,145 @@ describe('AutonomousAgentLoop', () => {
       reason: 'stale_cognition'
     })
     assert.equal(executions, 0)
+  })
+
+  it('does not admit provider work invalidated while memory retrieval is pending', async () => {
+    const retrievalStarted = deferred<void>()
+    const retrieval = deferred<{
+      context: { recentEpisodes: []; relevantFacts: [] }
+    }>()
+    const state = createAgentState('Alice')
+    const gate = new CognitiveGate()
+    const arbiter = new ActionArbiter()
+    const limiter = new TrackingProviderLimiter()
+    const telemetry = new AgentRuntimeTelemetry({ agentId: 'alice', username: 'Alice' })
+    let providerCalls = 0
+    const provider = instrumentAgentProvider({
+      decide: async () => {
+        providerCalls += 1
+        return { action: 'idle', reason: 'Wait.' }
+      }
+    }, limiter, telemetry, new AbortController().signal)
+    const loop = createLoop({
+      state,
+      cognitiveGate: gate,
+      arbiter,
+      provider,
+      memory: memoryDouble({
+        retrieve: async () => {
+          retrievalStarted.resolve()
+          return retrieval.promise
+        }
+      })
+    })
+
+    const cycle = loop.runCycle()
+    await retrievalStarted.promise
+    gate.invalidate('manual')
+    arbiter.interrupt('manual')
+    markManualOverride(state)
+    retrieval.resolve({ context: { recentEpisodes: [], relevantFacts: [] } })
+
+    assert.deepEqual(await cycle, {
+      status: 'skipped',
+      reason: 'manual_override'
+    })
+    assert.equal(providerCalls, 0)
+    assert.equal(limiter.calls, 0)
+    assert.equal(telemetry.snapshot().providerCalls, 0)
+    assert.equal(gate.snapshot().busy, false)
+
+    assert.equal((await loop.runCycle()).status, 'executed')
+    assert.equal(providerCalls, 1)
+    assert.equal(limiter.calls, 1)
+    assert.equal(telemetry.snapshot().providerCalls, 1)
+    assert.equal(gate.snapshot().busy, false)
+  })
+
+  it('does not admit provider work invalidated while social context is pending', async () => {
+    const socialStarted = deferred<void>()
+    const socialContext = deferred<readonly []>()
+    const gate = new CognitiveGate()
+    const arbiter = new ActionArbiter()
+    const limiter = new TrackingProviderLimiter()
+    const telemetry = new AgentRuntimeTelemetry({ agentId: 'alice', username: 'Alice' })
+    let providerCalls = 0
+    const provider = instrumentAgentProvider({
+      decide: async () => {
+        providerCalls += 1
+        return { action: 'idle', reason: 'Wait.' }
+      }
+    }, limiter, telemetry, new AbortController().signal)
+    const loop = createLoop({
+      cognitiveGate: gate,
+      arbiter,
+      provider,
+      socialContext: async () => {
+        socialStarted.resolve()
+        return socialContext.promise
+      }
+    })
+
+    const cycle = loop.runCycle()
+    await socialStarted.promise
+    gate.invalidate('reflex')
+    gate.invalidate('reflex')
+    arbiter.interrupt('reflex')
+    socialContext.resolve([])
+
+    assert.deepEqual(await cycle, {
+      status: 'skipped',
+      reason: 'priority_override'
+    })
+    assert.equal(providerCalls, 0)
+    assert.equal(limiter.calls, 0)
+    assert.equal(telemetry.snapshot().providerCalls, 0)
+    assert.equal(gate.snapshot().busy, false)
+
+    assert.equal((await loop.runCycle()).status, 'executed')
+    assert.equal(providerCalls, 1)
+    assert.equal(limiter.calls, 1)
+    assert.equal(telemetry.snapshot().providerCalls, 1)
+    assert.equal(gate.snapshot().busy, false)
+  })
+
+  it('does not admit provider work after shutdown while context is pending', async () => {
+    const socialStarted = deferred<void>()
+    const socialContext = deferred<readonly []>()
+    const gate = new CognitiveGate()
+    const limiter = new TrackingProviderLimiter()
+    const telemetry = new AgentRuntimeTelemetry({ agentId: 'alice', username: 'Alice' })
+    let providerCalls = 0
+    const provider = instrumentAgentProvider({
+      decide: async () => {
+        providerCalls += 1
+        return { action: 'idle', reason: 'Wait.' }
+      }
+    }, limiter, telemetry, new AbortController().signal)
+    const loop = createLoop({
+      cognitiveGate: gate,
+      provider,
+      socialContext: async () => {
+        socialStarted.resolve()
+        return socialContext.promise
+      }
+    })
+
+    const cycle = loop.runCycle()
+    await socialStarted.promise
+    loop.stop()
+    gate.stop()
+    socialContext.resolve([])
+
+    assert.deepEqual(await cycle, {
+      status: 'skipped',
+      reason: 'loop_stopped'
+    })
+    assert.equal(providerCalls, 0)
+    assert.equal(limiter.calls, 0)
+    assert.equal(telemetry.snapshot().providerCalls, 0)
+    assert.equal(gate.snapshot().busy, false)
+    await loop.waitForIdle()
   })
 
   it('adds bounded application-owned social context to the Brain input', async () => {
@@ -894,4 +1038,20 @@ function deferred<T>() {
   })
 
   return { promise, resolve: resolvePromise }
+}
+
+class TrackingProviderLimiter extends ProviderConcurrencyLimiter {
+  calls = 0
+
+  constructor() {
+    super(1)
+  }
+
+  override run<T>(
+    task: (queueWaitMs: number) => Promise<T>,
+    signal?: AbortSignal
+  ): Promise<T> {
+    this.calls += 1
+    return super.run(task, signal)
+  }
 }
