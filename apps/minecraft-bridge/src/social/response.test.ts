@@ -89,6 +89,52 @@ describe('social response contract', () => {
     }
   })
 
+  it('rejects URL-like contact and network destination forms', () => {
+    const unsafeMessages = [
+      'Visit example.com for details.',
+      'Visit EXAMPLE.COM/path?next=1#part.',
+      'Use ftp://example.test for details.',
+      'Use FTPS://example.test for details.',
+      'Email mailto:user@example.com for details.',
+      'Email user@example.com for details.',
+      'Visit 192.0.2.1/path for details.',
+      'Visit [2001:db8::1]:8080/path for details.',
+      'Open file:///tmp/social.txt.',
+      'Open data:text/plain,hello.',
+      'Open javascript:alert.',
+      'See [this](example.com).',
+      'See <example.com>.',
+      'Try (example.com), please.'
+    ]
+
+    for (const message of unsafeMessages) {
+      const result = validateSocialResponse({
+        message,
+        intent: 'reply',
+        continueConversation: false
+      }, 180)
+      assert.equal(result.success, false, message)
+      if (!result.success) assert.match(result.issues.join(' '), /URL/i, message)
+    }
+  })
+
+  it('allows ordinary dotted and numeric prose that is not a network destination', () => {
+    const safeMessages = [
+      'The bridge version is 1.20.4.',
+      'I counted 1.2 blocks per step.',
+      'Dr. Stone arrived at 3 p.m.',
+      'That was example number 2.'
+    ]
+
+    for (const message of safeMessages) {
+      assert.equal(validateSocialResponse({
+        message,
+        intent: 'reply',
+        continueConversation: false
+      }, 180).success, true, message)
+    }
+  })
+
   it('requires a conservative configured message bound', () => {
     assert.throws(
       () => validateSocialResponse({

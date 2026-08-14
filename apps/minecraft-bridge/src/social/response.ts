@@ -29,7 +29,12 @@ const RESPONSE_KEYS = ['message', 'intent', 'continueConversation'] as const
 const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f]/
 const OPERATOR_COMMAND = /^[A-Za-z][A-Za-z0-9_-]{0,31}\s+(?:stop|come|follow|scan|collect|inventory|talk)\b/i
 const COORDINATE_TRIPLE = /(?:\b[xyz]\s*=\s*-?\d+(?:\.\d+)?\s*){3}|-?\d+(?:\.\d+)?\s*[, ]\s*-?\d+(?:\.\d+)?\s*[, ]\s*-?\d+(?:\.\d+)?/i
-const URL = /(?:https?:\/\/|www\.)\S+/i
+const ACTIONABLE_URI_SCHEME = /\b(?:https?|ftps?|mailto|file|data|javascript):(?:\/\/)?[^\s<>"']+/i
+const EMAIL_ADDRESS = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,63}\b/i
+const BARE_HOSTNAME = /(?:^|[^A-Z0-9_-])(?:[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?\.)+[A-Z]{2,63}(?::\d{1,5})?(?:[/?#][^\s<>"']*)?/i
+const IPV4_DESTINATION = /(?:^|[^\d.])(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)(?::\d{1,5})?(?:[/?#][^\s<>"']*)?(?=$|[^\d.])/i
+const BRACKETED_IPV6_DESTINATION = /\[(?=[0-9A-F:.]*:[0-9A-F:.]*:)[0-9A-F:.]+\](?::\d{1,5})?(?:[/?#][^\s<>"']*)?/i
+const RAW_IPV6_CANDIDATE = /(?:^|[^A-Z0-9:])((?:[0-9A-F]{1,4}:){2,7}[0-9A-F]{0,4})(?:[/?#][^\s<>"']*)?/ig
 const CODE_OR_SHELL = /```|`[^`]+`|\$\(|\|\||&&|\b(?:sudo|curl|wget|chmod|node|python|npm|bash|powershell|rm\s+-)\b|\b[A-Za-z_$][\w$]*\s*\([^)]*\)/i
 const PROMPT_INJECTION = /\b(?:ignore|disregard|override)\s+(?:all\s+)?(?:previous|prior|system|developer)\s+(?:instructions?|messages?)\b|\b(?:reveal|show|repeat)\s+(?:the\s+)?system\s+prompt\b|\bfollow\s+(?:the\s+)?developer\s+message\b/i
 
@@ -83,7 +88,7 @@ export function validateSocialResponse(
   if (COORDINATE_TRIPLE.test(message)) {
     return invalid('message contains coordinates')
   }
-  if (URL.test(message)) return invalid('message contains a URL')
+  if (containsUrlLikeDestination(message)) return invalid('message contains a URL')
   if (CODE_OR_SHELL.test(message)) {
     return invalid('message contains code or shell syntax')
   }
@@ -109,6 +114,23 @@ export function validateSocialResponse(
 
 function invalid(issue: string): SocialResponseValidationResult {
   return { success: false, issues: [issue] }
+}
+
+function containsUrlLikeDestination(message: string): boolean {
+  if (
+    ACTIONABLE_URI_SCHEME.test(message) ||
+    EMAIL_ADDRESS.test(message) ||
+    BARE_HOSTNAME.test(message) ||
+    IPV4_DESTINATION.test(message) ||
+    BRACKETED_IPV6_DESTINATION.test(message)
+  ) return true
+
+  RAW_IPV6_CANDIDATE.lastIndex = 0
+  for (const match of message.matchAll(RAW_IPV6_CANDIDATE)) {
+    const candidate = match[1] ?? ''
+    if (candidate.includes('::') || /[A-F]/i.test(candidate)) return true
+  }
+  return false
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
